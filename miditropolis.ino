@@ -15,6 +15,7 @@
  * PolyMode - Currently Poly is Chord Triad only, different intervals,  thirds, fifths, etc?
  * Settable MIDI channels (listen, output)
  * Harmony Midi - for intervals/triads, output on different midi channels for poly using multi instruments?
+ * Seq Length Aids - skip marker?  sum of lengths (aids in getting good loops)
  * 
  * Needs Testing:
  * 
@@ -142,11 +143,30 @@ int readMuxValue(const unsigned inputMuxPins[], const unsigned signalPin, int mu
   return analogRead(signalPin);
 }
 
+void pollAllSteps(int n){
+  //called when sequencer has nothing better to do
+  //every n millis, will poll the knobs and update the display
+  
+  static unsigned long lastDisplayMillis = 0;    
+  unsigned currentMillis = millis();
+
+  //check to see if info menu is selected and if refresh time is elapsed
+  if(menuIndex == MI_INFO && currentMillis-lastDisplayMillis >= n){      
+    for(int i=0;i<stepMax;i++){
+      pollStep(i);
+    }
+    
+    updateDisplay();
+    //mark the time
+    lastDisplayMillis = currentMillis;
+  }
+}
+
 void pollStep(int s){
   //poll the knob settings for step s and write them to their corresponding array positions
 
-  Serial.print("Polling step: ");
-  Serial.println(s);
+  //Serial.print("Polling step: ");
+  //Serial.println(s);
  
   //get positions (0-1023)
   int noteVal = readMuxValue(row12MuxPins, row12SignalPin, 0, s);
@@ -346,6 +366,9 @@ void modifyScale(bool increment){
 		if(g_scaleIndex < 0)
 			g_scaleIndex = SCALE_ITEMCOUNT-1;
 	}
+  //possibly hacky... call midi panic and end all playing notes
+  //if sequence is running, the note-end event may never be called if old note is not in new scale
+  panic();
   setScaleFromEnum(g_scaleIndex);
 }
 
@@ -855,20 +878,19 @@ char* getSubMenuText(){
 void chordOn(int key, int chord[12], int velocity){
   //TODO arpeggiation probably requires total reworking!
   if(g_playModeIndex == CHORD){
-    Serial.print("playing notes: ");
+    //Serial.print("playing notes: ");
     for (int i=0; i<12; i++){
       if(chord[i]<0)
         break;
       MIDI.sendNoteOn(key+chord[i], velocity, 1);
-      Serial.print(key+chord[i]);
-      Serial.print(" ");
+      //Serial.print(key+chord[i]);
+      //Serial.print(" ");
     }
   }
   if(g_playModeIndex == SINGLE){
     if(chord[0]>=0)
       MIDI.sendNoteOn(key+chord[0],velocity,1);
   }
-  Serial.println("");
 }
 
 void chordOff(int key, int chord[12]){
@@ -979,13 +1001,7 @@ void loop(){
         //Serial.print("r");
         if(prevToggleVal == false){
           //first cycle this switch is on... let's flush the midi read of any transient events...)          
-          flushingReads = true;
-          Serial.println("flushing");
-          for(int i=0;i<128;i++){
-            //calling read with flushing toggled on, any clock events called should be harmless?
-            MIDI.read();
-          }
-          flushingReads = false;
+          flushReads();
           prevToggleVal = true;
         }
         
@@ -997,6 +1013,8 @@ void loop(){
     }else{
       //toggle switch is off... do anything while idle?
       //maybe repoll steps?
+      pollAllSteps(1000);
+      
       if(prevToggleVal == true){
         Serial.println("Toggled off");
         prevToggleVal = false;
@@ -1014,8 +1032,20 @@ void loop(){
 /************************************************************************************************************************************
  *                         BEGIN  MIDI EVENT HANDLING CODE
  ************************************************************************************************************************************/
+
+void flushReads(void){
+  //called when sequencer is toggled on after being off...
+  //basically calls MIDI.read() multiple times with handling code off.
+  //thus throwing away any transient midi data from prior to toggle
+  flushingReads = true;
+  //Serial.println("flushing");
+  for(int i=0;i<128;i++){
+    MIDI.read();
+  }
+  flushingReads = false;
+}
 void handleStart(void){
-  Serial.println("==================handleStart=====================");
+  //Serial.println("==================handleStart=====================");
   clk = 0-g_clkOffset;
   noteOn = false; 
   stepindex = 0;
@@ -1026,7 +1056,7 @@ void handleStart(void){
 }
 
 void handleStop(void){
-  Serial.println("==================handleStop=======================");
+  //Serial.println("==================handleStop=======================");
   //TODO write handleStop -- when DAW sends stop... housekeeping stuff like turn off LEDs, reset clocks to 0?
 
   panic();
@@ -1055,12 +1085,12 @@ void internalClockTick(){
 void handleClock(void){ 
   //When flag for midi call buffer flush is true, ignore all calls until flushing is over
   if(flushingReads == false){
-    Serial.print(clk);
-    Serial.print("|");
+    //Serial.print(clk);
+    //Serial.print("|");
     
     if(clk>=0 && (clk%clkDivider==0)){
       //clock is on the trigger pulse for a step      
-      Serial.println("trig pulse");
+      //Serial.println("trig pulse");
         
       updateDisplay(); 
       //at the first step (for all modes)
