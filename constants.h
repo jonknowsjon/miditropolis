@@ -15,9 +15,9 @@ const int bpmMin = 40;
 const int bpmMax = 240;
 
 
-const int MENU_ITEMCOUNT = 6;
-enum MENU_ITEMS_EN {MI_KEY, MI_SCALE, MI_PLAYMODE, MI_CLOCKDIV, MI_ARPTYPE, MI_CLOCKSRC, MI_BPM};
-char MENU_TEXT[8][10] = {"KEY", "SCALE", "NOTE MODE", "CLOCK DIV", "ARP TYPE", "CLOCK SRC", "INT. BPM"};
+const int MENU_ITEMCOUNT = 8;
+enum MENU_ITEMS_EN {MI_INFO, MI_SCALE, MI_KEY, MI_PLAYMODE, MI_CLOCKDIV, MI_ARPTYPE, MI_CLOCKSRC, MI_BPM};
+char MENU_TEXT[8][10] = {"INFO", "SCALE", "KEY", "NOTE MODE", "CLOCK DIV", "ARP TYPE", "CLOCK SRC", "INT. BPM"};
 
 
 int PLAY_MODES_ITEMCOUNT = 3;
@@ -27,7 +27,7 @@ char PLAY_MODES_TEXT[3][10] = {"PolyChord", "MonoNote", "MonoArp"};
 
 const int CLOCK_DIVS_ITEMCOUNT = 6;
 enum CLOCK_DIV_EN {SIXTEENTH, EIGHTH, QUARTER, HALF, WHOLE, DOUBLEWHOLE};
-char CLK_DIV_TEXT[6][9] = {"1/16", "1/8", "1/4", "1/2", "1", "2"};
+char CLK_DIV_TEXT[6][9] = {"16th", "8th", "Qtr", "Half", "Whole", "DblWhole"};
 const int  CLK_DIVS[6] = {		6,	12,	24,	48,	96,	192};
 						//96/16, 96/8, 96/4, 96/2, 96, 96*2
 
@@ -40,7 +40,8 @@ const int DURATION_MAX = 800;
 
 const int ARPTYPE_ITEMCOUNT = 4;
 enum ARPTYPE_EN {UP, DOWN, UPDOWN, RANDO};
-char ARPTYPE_TEXT[4][10] = {"UP","DOWN","UP&DOWN"};
+char ARPTYPE_TEXT[4][10] = {"UP","DOWN","UP&DOWN","RAND"};
 
+char INFO_TEXT[10] = "Hi There!";
 
 #endif //_CONSTANTS_H

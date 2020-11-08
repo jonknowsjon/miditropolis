@@ -40,14 +40,16 @@ bool encoderSwVal; //value for rotary enc's switch
 int g_scale[12][2] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //placeholder for the scale of notes to be worked within
 int g_scale_max = 12;
 
-int clkDivider = 96/16; //  96/n  for nth notes  96*n for superwhole
+int clkDivider = 96/8; //  96/n  for nth notes  96*n for superwhole
+
 int g_root = 60; //root note value -- all other note values are offsets of this -- 60 == Middle C
+int g_key = 60; //some sort of access violation w g_root incrementing with midi read code accessing it. going to try to modify key and assign root it's value on occasion
 
 //menu index variables (what the display is  focussed on, and it's current setting's index (for retrieving display text)
-volatile int menuIndex = 0;
+int menuIndex = MENU_ITEMCOUNT-1;
 bool subMenuSelected = false;
 int g_scaleIndex = MAJ_DIA;
-int g_clockDivIndex = SIXTEENTH;
+int g_clockDivIndex = EIGHTH;
 int g_playModeIndex = CHORD;
 int g_clockSrcIndex = CS_EXT;
 int g_bpm = 120; 
@@ -106,11 +108,13 @@ void pollEncoder(){
 
   static unsigned long lastSwOnTime = 0;
   unsigned long swOnTime;
-  if  (digitalRead(rotaryEncoderSwPin)){
+  
+  if  (!digitalRead(rotaryEncoderSwPin)){
     swOnTime = millis();
     if(swOnTime - lastSwOnTime > 750){
         //button pressed, and its the first time its been pressed in little while
         subMenuSelected = !subMenuSelected; //toggle menu/submenu selection
+        updateDisplay();
         lastSwOnTime = swOnTime;
     }
   }
@@ -118,8 +122,8 @@ void pollEncoder(){
     encoderVal = digitalRead(rotaryEncoderPin[0]);
     if(encoderVal != encoderPrevVal){
       changeTime = millis();
-      if(changeTime - lastChangeTime > 150){ //if last change was less than X ms ago, ignore it... (debouncing)          
-        menuNavigate(subMenuSelected,(encoderVal != digitalRead(rotaryEncoderPin[1])));        
+      if(changeTime - lastChangeTime > 75){ //if last change was less than X ms ago, ignore it... (debouncing)          
+        menuNavigate(subMenuSelected,(encoderVal == digitalRead(rotaryEncoderPin[1])));        
         updateDisplay();
         lastChangeTime = changeTime;
       }
@@ -144,10 +148,7 @@ void menuNavigate(bool submenu, bool increment){
   }
   
   if(submenu){
-    switch(menuIndex){
-      case MI_KEY: 
-        modifyKey(increment);
-        break;
+    switch(menuIndex){      
       case MI_SCALE: 
         modifyScale(increment);
         break;
@@ -166,25 +167,20 @@ void menuNavigate(bool submenu, bool increment){
       case  MI_BPM:
         modifyBPM(increment);
         break;
+      case MI_KEY: 
+        modifyKey(increment);
+        break;
     }
   }   
 }
 
 
-void modifyKey(bool increment){
-		
-	if(increment){
-		if(g_root < noteMax) //im thinking key should bottom out rather than wrap around
-			g_root++;		
-	}else{
-		if( g_root > noteMin)
-			g_root--;
-	};
-}
+
+
 void modifyScale(bool increment){
 	if(increment){		
 		g_scaleIndex++;
-		if(g_scaleIndex > SCALE_ITEMCOUNT)
+		if(g_scaleIndex > SCALE_ITEMCOUNT-1)
 			g_scaleIndex = 0;
 	}else{
 		g_scaleIndex--;
@@ -193,10 +189,11 @@ void modifyScale(bool increment){
 	}
   setScaleFromEnum(g_scaleIndex);
 }
+
 void modifyPlayMode(bool increment){
 	if(increment){
 		g_playModeIndex++;
-		if(g_playModeIndex > PLAY_MODES_ITEMCOUNT)
+		if(g_playModeIndex > PLAY_MODES_ITEMCOUNT-1)
 			g_playModeIndex = 0;
 	}else{
 		g_playModeIndex--;
@@ -204,6 +201,7 @@ void modifyPlayMode(bool increment){
 			g_playModeIndex = PLAY_MODES_ITEMCOUNT-1;
 	}
 }
+
 void modifyClockDiv(bool increment){
   if(increment){
 		if(g_clockDivIndex < CLOCK_DIVS_ITEMCOUNT-1) //clock div should bottom out rather than wrap around
@@ -213,10 +211,11 @@ void modifyClockDiv(bool increment){
 			g_clockDivIndex--;		
 	}
 }
+
 void modifyArpType(bool increment){
 	if(increment){
 		g_arpTypeIndex++;
-		if(g_arpTypeIndex > ARPTYPE_ITEMCOUNT)
+		if(g_arpTypeIndex > ARPTYPE_ITEMCOUNT-1)
 			g_arpTypeIndex = 0;
 	}else{
 		g_arpTypeIndex--;
@@ -224,10 +223,11 @@ void modifyArpType(bool increment){
 			g_arpTypeIndex = ARPTYPE_ITEMCOUNT-1;
 	}
 }
+
 void modifyClockSource(bool increment){
 	if(increment){
 		g_clockSrcIndex++;
-		if(g_clockSrcIndex >CLKSRC_ITEMCOUNT)
+		if(g_clockSrcIndex >CLKSRC_ITEMCOUNT-1)
 			g_clockSrcIndex = 0;
 	}else{
 		g_clockSrcIndex--;
@@ -235,13 +235,29 @@ void modifyClockSource(bool increment){
 			g_clockSrcIndex = CLKSRC_ITEMCOUNT-1;
 	}
 }
+
 void modifyBPM(bool increment){
   if(increment){
     if(g_bpm < bpmMax)
       g_bpm++;
   }else{
-    if(g_bpm > 0)
+    if(g_bpm > bpmMin)
       g_bpm--;
+  }
+}
+
+void modifyKey(bool increment){
+  //for some reason, modifying key while midi stack is running crashes the whole system...
+  //commenting out this block and everything runs, or commenting out Midi.read();
+  //using external clock toggle to allow changing while not running
+  if(digitalRead(extClockTogglePin) != HIGH){
+    if(increment){
+      if(g_key < noteMax)
+        g_key++;
+    }else{
+      if(g_key > noteMin)
+        g_key--;
+    }
   }
 }
 
@@ -253,17 +269,22 @@ void updateDisplay(){
   
   if(!subMenuSelected)
 	  display.print(">");
+  else
+    display.print(" ");
   display.println(MENU_TEXT[menuIndex]);
   
   if(subMenuSelected)
 	  display.print(">");
+  else
+    display.print(" ");
   if(menuIndex == MI_KEY){
-	  display.print(getNoteLetter(g_root));
-	  display.println(getNoteOctave(g_root));
+	  display.print(getNoteLetter(g_key));	  
+	  display.println(getNoteOctave(g_key));
+    display.println(g_key);
   }else if(menuIndex == MI_BPM){
     display.println(g_bpm);
   }else{
-	display.println(getSubMenuText());
+	  display.println(getSubMenuText());
   }
   display.display();
 }
@@ -285,6 +306,9 @@ char* getSubMenuText(){
       case  MI_CLOCKSRC:
         return CLKSRC_TEXT[g_clockSrcIndex];
         break;
+      case MI_INFO:
+        return INFO_TEXT;
+       break;
     }
 }
 
@@ -328,12 +352,12 @@ void pollStep(int s){
   int dur_val =  map(durationVal,0,1023,(0-DURATION_MAX),DURATION_MAX); //first half, value is ignored, so begin iteration at 512=0
   
   //assign values to memory 
-  in_note[s][0] = note_octave;
-  in_note[s][1] = note_val;
-  in_length[s] = map(lengthVal,0,1023,1,8);
-  in_duration[s][0] = dur_mode; 
-  in_duration[s][1] = dur_val;
-  in_velocity[s] = map(velocityVal,0,1023,-50,120);
+//  in_note[s][0] = note_octave;
+//  in_note[s][1] = note_val;
+//  in_length[s] = map(lengthVal,0,1023,1,8);
+//  in_duration[s][0] = dur_mode; 
+//  in_duration[s][1] = dur_val;
+//  in_velocity[s] = map(velocityVal,0,1023,-50,120);
 }
 
 void chordOn(int key, int chord[12], int velocity){
@@ -412,6 +436,7 @@ void setup(){
   pinMode(rotaryEncoderPin[0],INPUT);
   pinMode(rotaryEncoderPin[1],INPUT);
   pinMode(rotaryEncoderSwPin,INPUT_PULLUP);
+  pinMode(extClockTogglePin,INPUT_PULLUP);
   
   setGlobalScale(MAJ_CHORD_PROG);
   
@@ -419,7 +444,10 @@ void setup(){
   MIDI.setHandleStart(handleStart);
   MIDI.setHandleStop(handleStop);
   MIDI.setHandleClock(handleClock);
-  
+ 
+
+//Serial.begin(9600);
+
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   // Show initial display buffer contents on the screen --
@@ -435,28 +463,29 @@ void internalClockTick(){
   
   //determine milli interval between pulses for current bpm  
   int clkInterval = (g_bpm*(1000/60))/24;  //24 pulses per quarter... 60bpm = 1 beat per 1000ms =  (bpm*(1000/60))/24 = ms-per-clk
-  
-  //see if internal clock toggle is switched on
-  if(digitalRead(extClockTogglePin)){
-    //test to see if that interval has passed
-    if(currentMillis-lastPulseMillis >= clkInterval){
-      //if so, call handleclock
-      handleClock();
-      //mark pulse time
-      lastPulseMillis = currentMillis;
-    }
+
+  //test to see if that interval has passed
+  if(currentMillis-lastPulseMillis >= clkInterval){
+    //if so, call handleclock
+    handleClock();
+    //mark pulse time
+    lastPulseMillis = currentMillis;
   }
+
 }
 
 // the main running loop,  should put as few things here as possible to reduce latency
 void loop(){
- 
-  if(g_clockSrcIndex == CS_EXT)
-    MIDI.read();
+  //if toggle switch is on, either listen for midi signals or start internal midi pulsing
+  if(false){//digitalRead(extClockTogglePin) == HIGH){
+    if(g_clockSrcIndex == CS_EXT){
+      MIDI.read();
+    }  
+    if(g_clockSrcIndex == CS_INT){  
+      internalClockTick();
+    }
+  }
   
-  if(g_clockSrcIndex == CS_INT)  
-    internalClockTick();
-    
   pollEncoder();
 }
 
