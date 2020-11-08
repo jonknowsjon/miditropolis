@@ -1,36 +1,17 @@
 #include <MIDI.h>
-#include "forms.h"
+#include "constants.h"
+#include "musicdata.h"
 
 
 MIDI_CREATE_DEFAULT_INSTANCE();
 
-//mux pinout
-const bool muxTruthTable[16][4] = { {0,0,0,0},
-                                    {1,0,0,0},
-                                    {0,1,0,0},
-                                    {1,1,0,0},
-                                    {0,0,1,0},
-                                    {1,0,1,0},
-                                    {0,1,1,0},
-                                    {1,1,1,0},
-                                    {0,0,0,1},
-                                    {1,0,0,1},
-                                    {0,1,0,1},
-                                    {1,1,0,1},
-                                    {0,0,1,1},
-                                    {1,0,1,1},
-                                    {0,1,1,1},
-                                    {1,1,1,1},
-                                   };
-
 //pin constants
-  static const unsigned clkPin = 52; //pin for tempo LED, also used for debugging loops
-  static const unsigned ledMuxPins[5] = {22,23,24,25,53}; //4 pins for interfacing multiplexer + 1 signal pin
-  
-  static const unsigned row12MuxPins[4] = {26,27,28,29}; //pins for multiplexer for rows 1 and 2    
-  static const unsigned row34MuxPins[4] = {26,27,28,29}; //pins for multiplexer for rows 3 and 4
-  static const unsigned row12SignalPin = 8;
-  static const unsigned row34SignalPin = 9;
+static const unsigned clkPin = 52; //pin for tempo LED, also used for debugging loops
+static const unsigned ledMuxPins[5] = {22,23,24,25,53}; //4 pins for interfacing multiplexer + 1 signal pin
+static const unsigned row12MuxPins[4] = {26,27,28,29}; //pins for multiplexer for rows 1 and 2    
+static const unsigned row34MuxPins[4] = {26,27,28,29}; //pins for multiplexer for rows 3 and 4
+static const unsigned row12SignalPin = 8;
+static const unsigned row34SignalPin = 9;
 
 
 //timing variables
@@ -38,6 +19,7 @@ int clk = 0; //counter for midi clock pulses (24 per quarter note)
 bool noteOn = false; //flag for whether a note is actually playing
 int stepindex = 0; //counter for sequencer steps
 int stepLengthIndex = 0; //counter for clock divisions within a seq step (longer notes than others, etc)
+boolean midiPlaying = false; //flag for whether DAW is currently playing (start signal sent)
 
 //timing constants
 const int clkMax=96*4; //max clock value: 4 measures worth... 
@@ -46,6 +28,7 @@ const int clkMax=96*4; //max clock value: 4 measures worth...
 //hacky timing variables -- modify these to tweak the processing lag between clock rcv and note out
 bool hasOffset = false;
 int clkOffset = (24*4); //processing lag... allow a clock run-up to next measure to sync at beginning
+
 
 
 //global settings
@@ -91,7 +74,9 @@ void setup(){
 }
 
 void loop(){
-  MIDI.read();    
+  MIDI.read();
+  
+  pollEncoder();
 }
 
 void handleStart(void){
@@ -101,11 +86,13 @@ void handleStart(void){
   noteOn = false; 
   stepindex = 0;
   stepLengthIndex = 0; 
+  midiPlaying = true;
 }
 
 void handleStop(void){
 	//TODO write handleStop -- when DAW sends stop... housekeeping stuff like turn off LEDs, reset clocks to 0?
 	
+	midiPlaying = false;
 }
 
 //attempt at handling via a measure clock and subdividing from it
@@ -129,7 +116,8 @@ void handleClock(void){
 		
 		//TODO increment steplengthindex
 		//test to see if steplength > lengthVal-1
-		//if so - reset steplengthindex, increment stepindex
+		//if so - reset steplengthindex, poll next step, increment stepindex
+		pollStep(stepindex+1);
 		stepindex++;
       }          
     }      
@@ -146,6 +134,25 @@ void handleClock(void){
     }
 }
 
+void pollEncoder(void){
+	//read state information for the encoder, if changed, handle the change, display
+
+}
+
+void pollStep(int s){
+	//poll the knob settings for step s and write them to their corresponding array positions
+	
+	//get positions (0-1023)
+	int noteVal = readMuxValue(row12MuxPins, row12SignalPin, 0, s);
+	int lengthVal = readMuxValue(row12MuxPins, row12SignalPin, 1, s);
+	int durationVal = readMuxValue(row34MuxPins, row34SignalPin, 0, s);
+	int velocityVal = readMuxValue(row34MuxPins, row34SignalPin, 1, s);
+	
+	//perform logic based on position divisions?
+	
+	
+	//assign values to memory	
+}
 
 void stepOn(int root, int scale[12][2], int octaveOffset, int scaleIndex, int velocity){
   
@@ -192,7 +199,7 @@ void chordOff(int key, int chord[12]){
 void writeMuxLED(int muxIndex, bool on){
   //set digital pins to mux selector
   for(int i=0; i<4; i++){
-    digitalWrite(ledMuxPins[i], muxTruthTable[muxIndex][i]);
+    digitalWrite(ledMuxPins[i], MUX_TRUTH_TABLE[muxIndex][i]);
   }
   //write signal
   digitalWrite(ledMuxPins[4], on);
@@ -202,7 +209,7 @@ int readMuxValue(unsigned inputMuxPins[], unsigned signalPin, int muxGroup, int 
   //set digital pins to mux selector
   for(int i=0; i<4; i++){
     digitalWrite(inputMuxPins[i]+(8*muxGroup), //muxGroup 0 or 1, determines whether first or second 8 in 16 channel multiplexer
-		muxTruthTable[muxIndex][i]);
+		MUX_TRUTH_TABLE[muxIndex][i]);
   }
   //read signal
   return analogRead(signalPin);

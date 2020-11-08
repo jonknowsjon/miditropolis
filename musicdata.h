@@ -23,17 +23,16 @@ static int IVL_FIFTH[12] =     { 0, 7,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
 static int ROOT_ONLY[12] = { 0,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
 
 
-
-static int CHROMATIC_PROG[12][2] = {      {0,MAJ},
+static int CHROMATIC_PROG[12][2] = {      {0,ROOTONLY},
                                           {1,ROOTONLY},
                                           {2,ROOTONLY},
                                           {3,ROOTONLY},
                                           {4,ROOTONLY},
                                           {5,ROOTONLY},
-                                          {6,MAJ}, 
+                                          {6,ROOTONLY}, 
                                           {7,ROOTONLY},
                                           {8,ROOTONLY},
-                                          {9,MAJ},
+                                          {9,ROOTONLY},
                                           {10,ROOTONLY},
                                           {11,ROOTONLY}};
 
@@ -43,7 +42,7 @@ static int MAJ_CHORD_PROG[12][2] = {      {0,MAJ},
                                           {5,MAJ},
                                           {7,MAJ},
                                           {9,MIN},
-                                          {11,DIM},  //WTF... should be 11?  But 12 plays correctly???
+                                          {11,DIM},  
                                           {-1,UNDEF},
                                           {-1,UNDEF},
                                           {-1,UNDEF},
@@ -57,7 +56,7 @@ static int MIN_CHORD_PROG[12][2] = {      {0,MIN},
                                           {5,MIN},
                                           {7,MIN},
                                           {8,MAJ},
-                                          {10,MAJ},  // SAME... should be 10...?? but 11 is better?
+                                          {10,MAJ},  
                                           {-1,UNDEF},
                                           {-1,UNDEF},
                                           {-1,UNDEF},
@@ -126,5 +125,16 @@ int * chordFromForm(int form){
     }
  //maj min dim sus2 sus4  
 }
+
+char* getNoteLetter(int noteVal){
+  char LETTERS[12][3] = {"C","C#","D","D#","E","F","F#","G","G#","A","#","B"};
+  return LETTERS[noteVal%12];
+}
+
+int getNoteOctave(int noteVal){
+  return ((noteVal / 12)-1);
+}
+
+
 
 #endif // _MUSICDATA_H
