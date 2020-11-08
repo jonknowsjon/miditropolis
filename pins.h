@@ -17,7 +17,7 @@ static const unsigned rotaryEncoderSwPin = 44;
 
 static const unsigned extClockTogglePin = 25; //when clock source is internal, toggle for whether clock is running or not
 
-
+static const unsigned randomSeedPin = 15; //unconnected pin used for initializing pseudo rng
 
 
 //mux pinout

@@ -1,9 +1,7 @@
 #ifndef _MUSICDATA_H
 #define _MUSICDATA_H
 
-enum FORMS {MAJ, MIN, DIM, SUS2, SUS4, MAJ3, MIN3, FIFTH, ROOTONLY, UNDEF};
-
-
+enum FORMS {MAJ, MIN, DIM, SUS2, SUS4, MAJ3, MIN3, FIFTH, AUGMENTED, ROOTONLY, UNDEF};
 
 static int SCALE_UNDEF[12] =       {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
 
@@ -16,6 +14,7 @@ static int TRIAD_MIN[12] =     { 0, 3, 7,-1,-1,-1,-1,-1,-1,-1,-1,-1}; //1
 static int TRIAD_DIM[12] =     { 0, 3, 6,-1,-1,-1,-1,-1,-1,-1,-1,-1}; //2
 static int TRIAD_SUS2[12] =    { 0, 2, 7,-1,-1,-1,-1,-1,-1,-1,-1,-1}; //3
 static int TRIAD_SUS4[12] =    { 0, 5, 7,-1,-1,-1,-1,-1,-1,-1,-1,-1}; //4
+static int TRIAD_AUG[12] =     { 0, 4, 8,-1,-1,-1,-1,-1,-1,-1,-1,-1}; //5
 
 static int IVL_MAJ_THIRD[12] = { 0, 4,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
 static int IVL_MIN_THIRD[12] = { 0, 3,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
@@ -24,6 +23,11 @@ static int IVL_FIFTH[12] =     { 0, 7,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
 static int ROOT_ONLY[12] = { 0,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
 
 
+/*
+ * Need to add more modes / forms
+ * Pentatonic and these below
+ * https://en.wikipedia.org/wiki/Mode_(music)#Modern_modes
+*/
 static int CHROMATIC_PROG[12][2] = {      {0,ROOTONLY},
                                           {1,ROOTONLY},
                                           {2,ROOTONLY},
@@ -88,6 +92,9 @@ int * chordFromForm(int form){
         break;
       case ROOTONLY:
         return ROOT_ONLY;
+        break;
+      case AUGMENTED:
+        return TRIAD_AUG;
         break;
       default:
         return SCALE_UNDEF;

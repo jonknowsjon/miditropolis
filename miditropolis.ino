@@ -1,9 +1,13 @@
 /***************************************************************************************************************************************************
+ * MIDIBOX
+ * An Arduino-driven midi sequencer, 
+ * inspired by the Intellijel Metropolis Eurorack Module, and by transitive property, ryktnk's Roland 100m sequencer
+ * 
  * 
  * 
  * Physical TODO: 
  * Knob data pins wire
- * Mux wiring harnesses/termination
+ * Mux wiring harnesses/termination -- skipping for how
  * Feet -- Adhesive vs screwed from within
  *  
  * 
@@ -12,19 +16,21 @@
  * Arpeggiation
  * Step Order (Menu item, default forwards... additional: backwards, random, brownian (plinko))   --- RNG NOT WORKING
  * Step hold-- switch,  while note on, sustains current note, while off, does not?  (resume quantized?) 
- * Staccato (menu item, allows note length to be reduced by X clock cycles for clippier notes?)
+  * More Scales / Modes  -- 
  * Info Menu:
  *    Current beats/clock (perhaps show step+stepindex as dashes+numbers ie --5---- would be 5th stepindex of 3rd step
  *    Current Settings/Vals (show current step's Values (for help fine tuning)
  *    
- * Custom Splash Screen
+ * 
+ * MUX analog inputs not working at all...    
  * 
  * 
  * Needs Testing:
  * Knob values / assignments
- * Internal Clock ticking
- * Clock Switch
- * 
+ * DebugInfo -- seems to be working
+ * Sequence Info -- working, needs cosmetics
+ * Random+Brownian Sequences  -- modified seed/pin initialization, may work?
+ * Staccato -- seems to be working
  * 
  * *************************************************************************************************************************************************
  */
@@ -38,6 +44,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <Fonts/TomThumb.h>
 #include "constants.h"
 #include "musicdata.h"
 #include "pins.h"
@@ -50,33 +57,28 @@ MIDI_CREATE_INSTANCE(HardwareSerial, Serial3, MIDI);  //Serial3 uses pins 14 & 1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 
+/************************************************************************************************************************************
+ *                         BEGIN VARIABLE DECLARATION
+ ************************************************************************************************************************************/
+
 //timing variables
 int clk = 0; //counter for midi clock pulses (24 per quarter note)
+int clkDivider = CLK_DIVS[EIGHTH]; //  96/n  for nth notes  96*n for superwhole
+int g_clkOffset = 0;//(24*4); //processing lag... allow a clock run-up to next measure to sync at beginning
 bool noteOn = false; //flag for whether a note is actually playing
 int stepindex = 0; //counter for sequencer steps
 int nextStepIndex = 0; //placeholder for next step in sequence (for non-standard sequence orders)
 int stepLengthIndex = 0; //counter for clock divisions within a seq step (longer notes than others, etc)
 bool midiPlaying = false; //flag for whether DAW is currently playing (start signal sent)
 
-
-
-//hacky timing variables -- modify these to tweak the processing lag between clock rcv and note out
-bool hasOffset = true;
-int g_clkOffset = 0;//(24*4); //processing lag... allow a clock run-up to next measure to sync at beginning
-
-
 //display & selection variables
 int encoderVal, encoderPrevVal; //current + previous values for rotary encoder
 bool encoderSwVal; //value for rotary enc's switch
 
-
 //global settings
+int g_key = 60; //root note value -- all other note values are offsets of this -- 60 == Middle C
 int g_scale[12][2] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //placeholder for the scale of notes to be worked within
 int g_scale_max = 12;
-
-int clkDivider = 96/8; //  96/n  for nth notes  96*n for superwhole
-
-int g_key = 60; //root note value -- all other note values are offsets of this -- 60 == Middle C
 
 //menu index variables (what the display is  focussed on, and it's current setting's index (for retrieving display text)
 int menuIndex = MI_INFO;
@@ -85,13 +87,11 @@ int g_scaleIndex = MAJ_DIA;
 int g_clockDivIndex = EIGHTH;
 int g_playModeIndex = CHORD;
 int g_clockSrcIndex = CS_EXT;
-int g_bpm = 120; 
+int g_bpm = 120; //bpm value for internal clock 
 int g_arpTypeIndex = 0; //unimplemented right now...
 int g_infoModeIndex = SEQINFO;
 int g_seqOrderIndex = FORWARD;
 int g_staccato = 0;
-
-
 
 //arrays holding step data to be populated from knobs -- initialized with test data
 int in_note[8][2] =    {{0, 1},  //octave, position
@@ -120,9 +120,12 @@ int raw_note[8] = {0,0,0,0,0,0,0,0};
 int raw_length[8] = {0,0,0,0,0,0,0,0};
 int raw_duration[8] = {0,0,0,0,0,0,0,0};
 int raw_velocity[8] = {0,0,0,0,0,0,0,0};
+///////////////////////////END VARIABLE DECLARATION////////////////////////////////////////////////////////////////////////////////////
 
 
-//////////////////////  I / O ////////////////////////////
+/************************************************************************************************************************************
+ *                         BEGIN PHYSICAL  I / O CODE
+ ************************************************************************************************************************************/
 void writeMuxLED(int muxIndex, bool on){
   //set digital pins to mux selector
   for(int i=0; i<4; i++){
@@ -141,8 +144,50 @@ int readMuxValue(const unsigned inputMuxPins[], const unsigned signalPin, int mu
   //read signal
   return analogRead(signalPin);
 }
-///////////////////////////////////////////////////////////
 
+void pollStep(int s){
+  //poll the knob settings for step s and write them to their corresponding array positions
+
+  //if step to poll >= max, poll 0 instead
+  if(s >= stepMax-1)
+    s = 0;  
+  
+  //get positions (0-1023)
+  int noteVal = readMuxValue(row12MuxPins, row12SignalPin, 0, s);
+  int lengthVal = readMuxValue(row12MuxPins, row12SignalPin, 1, s);
+  int durationVal = readMuxValue(row34MuxPins, row34SignalPin, 0, s);
+  int velocityVal = readMuxValue(row34MuxPins, row34SignalPin, 1, s);
+
+  //save off raw data for debugging/display
+  raw_note[s] = noteVal;
+  raw_length[s] = lengthVal;
+  raw_duration[s] = durationVal;
+  raw_velocity[s] = velocityVal;
+  
+  //perform logic based on position divisions
+  int note_octave = map(noteVal,0,1023,-1,1);
+  int note_val =  map(noteVal,0,1023,0,36)%12;
+  int dur_mode =  map(durationVal,0,1023,0,3); //split into 2 quarters + half : HOLD, ONCE, REPEAT*2 
+  if(dur_mode >= 2) 
+     dur_mode = 2; //Q3 and Q4 = REPEAT = 2;  
+  int dur_val =  map(durationVal,0,1023,(0-DURATION_MAX),DURATION_MAX); //first half, value is ignored, so begin iteration at 512=0
+
+
+  //UNCOMMENT THESE WHEN READY TO READ KNOB VALUES  (MUX IS HOOKED UP)
+//  //assign values to memory
+//  in_note[s][0] = note_octave;
+//  in_note[s][1] = note_val;
+//  in_length[s] = map(lengthVal,0,1023,1,8);
+//  in_duration[s][0] = dur_mode; 
+//  in_duration[s][1] = dur_val;
+//  in_velocity[s] = map(velocityVal,0,1023,-50,120);
+}
+////////////////////////////END PHYSICAL I / O CODE////////////////////////////////////////////////////////////////////////////////////
+
+
+/************************************************************************************************************************************
+ *                         BEGIN  MENU & VALUE ASSIGNMENTS
+ ************************************************************************************************************************************/
 void pollEncoder(){
   //debouncing variables
   static unsigned long lastChangeTime = 0;  
@@ -373,10 +418,6 @@ void modifyBPM(bool increment){
 void modifyKey(bool increment){
   Serial.print("ky ");
   Serial.println(increment);
-  //for some reason, modifying key while midi stack is running crashes the whole system...
-  //commenting out this block and everything runs, or commenting out Midi.read();
-  //using external clock toggle to allow changing while not running
-  //if(digitalRead(extClockTogglePin) != HIGH){
     if(increment){
       if(g_key < noteMax)
         g_key++;
@@ -384,31 +425,69 @@ void modifyKey(bool increment){
       if(g_key > noteMin)
         g_key--;
     }
-  //}
 }
 
+void setGlobalScale(int newscale[12][2]){
+  for (int i=0; i<12; i++){
+
+    g_scale[i][0] = newscale[i][0];
+    g_scale[i][1] = newscale[i][1]; 
+    
+    if(g_scale[i][1] != UNDEF) //determine highest index with definition (used for segmenting note knob)
+      g_scale_max = i;
+  }  
+}
+
+void setScaleFromEnum(int scale){
+  switch(scale){
+    case MAJ_DIA:
+      setGlobalScale(MAJ_CHORD_PROG);
+      break;
+    case MIN_DIA:
+      setGlobalScale(MIN_CHORD_PROG);
+      break;
+    case CHROMA:
+      setGlobalScale(CHROMATIC_PROG);
+      break;
+    default:
+      setGlobalScale(CHROMATIC_PROG);
+      break;
+  }  
+}
+////////////////////////////END MENU & VALUE ASSIGNMENT CODE//////////////////////////////////////////////////////////////////////////
+
+
+/************************************************************************************************************************************
+ *                         BEGIN  DISPLAY  & SERIAL FUNCTIONS 
+ ************************************************************************************************************************************/
 void updateDisplay(){
   display.clearDisplay();
   display.setCursor(0,0);
   display.setTextSize(2);
+  display.setFont(NULL);
   display.setTextColor(SSD1306_WHITE);
-  
+
+ 
   if(!subMenuSelected)
-	  display.print(">");
+    display.print(">");
   else
-    display.print(" ");
-  
+    display.print(" ");  
+    
   display.println(MENU_TEXT[menuIndex]);
-  
-  if(subMenuSelected)
-	  display.print(">");
-  else
-    display.print(" ");
-  
-  displaySubMenuValue();
-  
-  if(menuIndex == MI_INFO){
-    displayInfo();  
+
+  if(menuIndex != MI_DEBUG){    
+    if(subMenuSelected)
+      display.print(">");
+    else
+      display.print(" ");
+    
+    displaySubMenuValue();
+    
+    if(menuIndex == MI_INFO){
+      displayInfo();  
+    }
+  }else{
+    displayDebug();  
   }
   
   display.display();
@@ -421,7 +500,9 @@ void displaySubMenuValue(){
   }else if(menuIndex == MI_BPM){
     display.println(g_bpm);
   }else if(menuIndex == MI_STACC){
-    display.println(g_staccato);
+    display.print(g_staccato);
+    display.print(" max ");
+    display.println(clkDivider-1);
   }else if(menuIndex == MI_CLKOFFSET){
     display.println(g_clkOffset);
   }else{
@@ -430,14 +511,94 @@ void displaySubMenuValue(){
 }
 
 void displayInfo(){
+  display.setTextSize(1);
   if(g_infoModeIndex == GENERAL){
-    display.println("GenHere");
+    display.println("Howdy Partner");
   }
-  if(g_infoModeIndex == SEQINFO){
-    display.println("SeqHere");
+  if(g_infoModeIndex == SEQINFO){    
+    for(int i=0;i<8;i++){
+      displaySeqInfo1(i);  
+    }
+    display.println("");
+    for(int i=0;i<8;i++){
+      displaySeqInfo2(i);
+    }    
   }
   if(g_infoModeIndex == STEPVALUE){
     display.println("StepHere");
+    //things to display:
+    //current step no, octave, interval, note,  length, duration+mode, velocity    
+  }
+}
+
+void displaySeqInfo1(int s){
+  //first line -- displays settings (trying out length)
+  display.print(in_length[s]);
+}
+void displaySeqInfo2(int s){
+  //second line --displays current position 
+  // ---6---- indicates 7th substep of 4th step
+  if(s == stepindex){
+    display.print(stepLengthIndex+1); 
+  }else{
+    display.print("-");
+  }
+}
+
+void displayDebug(){
+  display.setTextSize(1);
+  if(subMenuSelected){
+    //get fresh info
+    for(int i=0;i<8;i++){
+      pollStep(i);
+    }
+        
+    display.setFont(&TomThumb);
+
+    display.print("N");
+    for(int i=0;i<8;i++){
+      display.print(" ");
+      display.print(raw_note[i],HEX);        
+    }
+    display.println("");
+    display.print("L");
+
+    for(int i=0;i<8;i++){
+      display.print(" ");
+      display.print(raw_length[i],HEX);        
+    }
+    display.println("");  
+    display.print("D");
+  
+    for(int i=0;i<8;i++){
+      display.print(" ");
+      display.print(raw_duration[i],HEX);        
+    }
+    display.println("");
+    display.print("V");    
+    for(int i=0;i<8;i++){
+      display.print(" ");
+      display.print(raw_velocity[i],HEX);        
+    }
+    display.println("");
+    
+  }else{    
+    display.println("Debug Off");
+    display.println("Press to Enable");
+  }
+}
+
+void debugRefresh(){
+  //when called within a loop, will refresh the display every N milliseconds
+  //used for debugging/testing components
+  
+  static unsigned long lastDisplayMillis = 0;    
+  unsigned currentMillis = millis();
+  
+  if(currentMillis-lastDisplayMillis >= 750){    
+    updateDisplay();
+    //mark the time
+    lastDisplayMillis = currentMillis;
   }
 }
 
@@ -450,7 +611,7 @@ void memoryLog(){
 }
 
 char* getSubMenuText(){
-	switch(menuIndex){
+  switch(menuIndex){
       case MI_SCALE: 
         return SCALE_TEXT[g_scaleIndex];
         break;
@@ -474,66 +635,12 @@ char* getSubMenuText(){
        break;
     }
 }
-
-void setScaleFromEnum(int scale){
-  switch(scale){
-    case MAJ_DIA:
-      setGlobalScale(MAJ_CHORD_PROG);
-      break;
-    case MIN_DIA:
-      setGlobalScale(MIN_CHORD_PROG);
-      break;
-    case CHROMA:
-      setGlobalScale(CHROMATIC_PROG);
-      break;
-    default:
-      setGlobalScale(CHROMATIC_PROG);
-      break;
-  }  
-}
-
-/////////////END MENU & VALUE ASSIGNMENT CODE//////////////////////
+/////////////////////////END DISPLAY & SERIAL FUNCTIONS //////////////////////////////////////////////////////////////////////////////
 
 
-
-
-void pollStep(int s){
-  //poll the knob settings for step s and write them to their corresponding array positions
-
-  //if step to poll >= max, poll 0 instead
-  if(s >= stepMax-1)
-    s = 0;  
-  
-  //get positions (0-1023)
-  int noteVal = readMuxValue(row12MuxPins, row12SignalPin, 0, s);
-  int lengthVal = readMuxValue(row12MuxPins, row12SignalPin, 1, s);
-  int durationVal = readMuxValue(row34MuxPins, row34SignalPin, 0, s);
-  int velocityVal = readMuxValue(row34MuxPins, row34SignalPin, 1, s);
-
-  //save off raw data for debugging/display
-  raw_note[s] = noteVal;
-  raw_length[s] = lengthVal;
-  raw_duration[s] = durationVal;
-  raw_velocity[s] = velocityVal;
-  
-  //perform logic based on position divisions
-  int note_octave = map(noteVal,0,1023,-1,1);
-  int note_val =  map(noteVal,0,1023,0,36)%12;
-  int dur_mode =  map(durationVal,0,1023,0,3); //split into 2 quarters + half : HOLD, ONCE, REPEAT*2 
-  if(dur_mode >= 2) 
-     dur_mode = 2; //Q3 and Q4 = REPEAT = 2;  
-  int dur_val =  map(durationVal,0,1023,(0-DURATION_MAX),DURATION_MAX); //first half, value is ignored, so begin iteration at 512=0
-
-
-  //UNCOMMENT THESE WHEN READY TO READ KNOB VALUES  (MUX IS HOOKED UP)
-//  //assign values to memory
-//  in_note[s][0] = note_octave;
-//  in_note[s][1] = note_val;
-//  in_length[s] = map(lengthVal,0,1023,1,8);
-//  in_duration[s][0] = dur_mode; 
-//  in_duration[s][1] = dur_val;
-//  in_velocity[s] = map(velocityVal,0,1023,-50,120);
-}
+/************************************************************************************************************************************
+ *                         BEGIN MIDI SIGNALING CODE
+ ************************************************************************************************************************************/
 
 void chordOn(int key, int chord[12], int velocity){
   //TODO arpeggiation probably requires total reworking!
@@ -574,6 +681,7 @@ void stepOn(int root, int scale[12][2], int octaveOffset, int scaleIndex, int ve
     noteOn = true;
   }
 }
+
 void stepOff(int root, int scale[12][2], int octaveOffset, int scaleIndex){
   
     chordOff(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
@@ -581,18 +689,18 @@ void stepOff(int root, int scale[12][2], int octaveOffset, int scaleIndex){
     noteOn = false;
 }
 
-
-void setGlobalScale(int newscale[12][2]){
-  for (int i=0; i<12; i++){
-
-    g_scale[i][0] = newscale[i][0];
-    g_scale[i][1] = newscale[i][1]; 
-    
-    if(g_scale[i][1] != UNDEF) //determine highest index with definition (used for segmenting note knob)
-      g_scale_max = i;
-  }  
+void panic(){
+  for (int i=0;i<128;i++){
+     MIDI.sendNoteOff(i,0,1);
+  }
 }
+//////////////////////////  END  MIDI SIGNAL CODE ////////////////////////////////////////////////////////////////////////////////////
 
+
+/************************************************************************************************************************************
+ *                         BEGIN  ARDUINO PROCEDURAL CODE
+ *                         (SETUP  &  LOOP)
+ ************************************************************************************************************************************/
 void setup(){ 
 
   Serial.begin(9600);
@@ -615,7 +723,9 @@ void setup(){
   pinMode(rotaryEncoderSwPin,INPUT_PULLUP);
   pinMode(extClockTogglePin,INPUT_PULLUP);
   
-  randomSeed(analogRead(15));
+  pinMode(randomSeedPin,INPUT);
+  
+  randomSeed(analogRead(randomSeedPin));
   
   setGlobalScale(MAJ_CHORD_PROG);
   
@@ -633,6 +743,53 @@ void setup(){
   updateDisplay();  
 }
 
+void loop(){
+  // the main running loop,  should put as few things here as possible to reduce latency  
+
+  //test for menu knob changes
+  pollEncoder();
+
+  if(menuIndex == MI_DEBUG && subMenuSelected){
+    //menu's set to debug and debugging enabled, call debug display code
+    debugRefresh();
+  }else{    
+    //we're not debugging, proceed as normal    
+    if(digitalRead(extClockTogglePin) == LOW){
+      //if toggle switch is on, either listen for midi signals or start internal midi pulsing
+      if(g_clockSrcIndex == CS_EXT){
+        MIDI.read();
+      }  
+      if(g_clockSrcIndex == CS_INT){  
+        internalClockTick();
+      }
+    }
+  }
+}
+///////////////////////////END  ARDUINO PROCEDURAL CODE///////////////////////////////////////////////////////////////////////////////
+
+
+/************************************************************************************************************************************
+ *                         BEGIN  MIDI EVENT HANDLING CODE
+ ************************************************************************************************************************************/
+void handleStart(void){
+  clk = 0-g_clkOffset;
+  noteOn = false; 
+  stepindex = 0;
+  stepLengthIndex = 0;
+  pollStep(0);
+  midiPlaying = true;
+}
+
+void handleStop(void){
+  //TODO write handleStop -- when DAW sends stop... housekeeping stuff like turn off LEDs, reset clocks to 0?
+
+  panic();
+  digitalWrite(clkPin,LOW); //turn off clock led
+  digitalWrite(ledMuxPins[4], LOW); //turn off step indicator led
+  
+  midiPlaying = false;
+}
+
 void internalClockTick(){
   static unsigned long lastPulseMillis = 0;    
   unsigned currentMillis = millis();    
@@ -647,47 +804,14 @@ void internalClockTick(){
     //mark pulse time
     lastPulseMillis = currentMillis;
   }
-
 }
 
-// the main running loop,  should put as few things here as possible to reduce latency
-void loop(){
-  //if toggle switch is on, either listen for midi signals or start internal midi pulsing
-  if(digitalRead(extClockTogglePin) == HIGH){
-    if(g_clockSrcIndex == CS_EXT){
-      MIDI.read();
-    }  
-    if(g_clockSrcIndex == CS_INT){  
-      internalClockTick();
-    }
-  }
-  
-  pollEncoder();
-}
-
-void handleStart(void){
-  clk = 0;
-  if(hasOffset)
-    clk = 0-g_clkOffset;
-  noteOn = false; 
-  stepindex = 0;
-  stepLengthIndex = 0;
-  pollStep(0);
-  midiPlaying = true;
-}
-
-void handleStop(void){
-  //TODO write handleStop -- when DAW sends stop... housekeeping stuff like turn off LEDs, reset clocks to 0?
-  
-  midiPlaying = false;
-}
-
-//attempt at handling via a measure clock and subdividing from it
-void handleClock(void){
+void handleClock(void){ 
   
   if(clk>=0 && (clk%clkDivider==0)){
     //clock is on the trigger pulse for a step      
     
+    updateDisplay(); 
     //at the first step (for all modes)
     bool isFirstStep = (stepLengthIndex == 0);
     //determine if mode is set to repeating
@@ -695,12 +819,30 @@ void handleClock(void){
     //determine if step is within repeating mode's pattern length value
     bool isWithinPattern = (stepLengthIndex > 0 && stepLengthIndex < in_duration[stepindex][1]/(DURATION_MAX/in_length[stepindex])+1);
     
+    
     if( isFirstStep || (isRepeating && isWithinPattern)){
       //play the step
       stepOn(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1], in_velocity[stepindex]);
-      writeMuxLED(stepindex,HIGH);       
+      writeMuxLED(stepindex,HIGH);   
+         
     }     
   }
+
+  
+  if(g_staccato > 0){
+    //for when staccato is being used
+    //determine staccato interval (distance between current clock and next clock division)
+    int staccInterval = g_staccato+1;
+    if(staccInterval >= clkDivider){
+      //ensure interval never exceeds divider -1 (allows a note 1 clock pulse long, anything shorter is impossible)
+      staccInterval = clkDivider-1;
+    }
+    //truncate the current played note early (by staccato offset interval)
+    if(noteOn && clk>=0 && ((clk+staccInterval)%clkDivider==0)){
+      stepOff(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1]);
+      writeMuxLED(stepindex,LOW);
+    }
+  }  
 
 
   if(clk>=0 && ((clk+1)%clkDivider==0) ){    
@@ -717,7 +859,7 @@ void handleClock(void){
             writeMuxLED(stepindex,LOW);  
         }
     }    
-       
+    
     stepLengthIndex++;    
     
     //determine if last beat within step
@@ -730,9 +872,7 @@ void handleClock(void){
   //step may have been freshly incremented above, set to 0 if over max
   if(stepindex>stepMax-1){
     stepindex = 0;
-  }
-
-
+  }  
   
   //Tempo/BPM LED logic: clock pulse on quarter notes (regardless of divider setting)
   if(clk>=0 && (clk%CLK_DIVS[QUARTER]==0)){
@@ -771,8 +911,8 @@ void nextStep(){
       nextStepIndex = random(stepMax-1);
     }
     if(g_seqOrderIndex == BROWNIAN){ //randomly pick increment or decrement
-      bool inc = random(1);
-      if(inc){
+      
+      if(random(1)){
         nextStepIndex = stepindex+1;
         if(nextStepIndex > stepMax-1)
           nextStepIndex = 0;  
