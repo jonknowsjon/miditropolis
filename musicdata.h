@@ -4,6 +4,7 @@
 enum FORMS {MAJ, MIN, DIM, SUS2, SUS4, MAJ3, MIN3, FIFTH, ROOTONLY, UNDEF};
 
 
+
 static int SCALE_UNDEF[12] =       {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
 
 static int SCALE_CHRO[12] =    { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11};
@@ -64,7 +65,27 @@ static int MIN_CHORD_PROG[12][2] = {      {0,MIN},
                                           {-1,UNDEF}};
 
 
+const int SCALE_ITEMCOUNT = 3;
+enum SCALE_EN{MAJ_DIA, MIN_DIA, CHROMA};
+const char SCALE_TEXT[3][9] = {"MajDiatnc","MinDiatnc","Chromatic"};
 
+int ** scaleFromEnum(int scale){
+	switch(scale){
+		case MAJ_DIA:
+			return MAJ_CHORD_PROG;
+			break;
+		case MIN_DIA:
+			return MIN_CHORD_PROG;
+			break;
+		case CHROMA:
+			return CHROMATIC_PROG;
+			break;
+		default:
+			return MAJ_CHORD_PROG;
+			break;
+	}
+	
+}
 
 int * chordFromForm(int form){
     switch(form){

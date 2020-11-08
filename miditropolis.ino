@@ -8,14 +8,13 @@
 #include "musicdata.h"
 #include "pins.h"
 
-MIDI_CREATE_DEFAULT_INSTANCE();
 
+MIDI_CREATE_DEFAULT_INSTANCE();
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-
 
 
 //timing variables
@@ -25,9 +24,7 @@ int stepindex = 0; //counter for sequencer steps
 int stepLengthIndex = 0; //counter for clock divisions within a seq step (longer notes than others, etc)
 bool midiPlaying = false; //flag for whether DAW is currently playing (start signal sent)
 
-//timing constants
-const int clkMax=96*4; //max clock value: 4 measures worth... 
-             //4 measures allows for breve notes (double whole)
+
 
 //hacky timing variables -- modify these to tweak the processing lag between clock rcv and note out
 bool hasOffset = true;
@@ -41,15 +38,21 @@ bool encoderSwVal; //value for rotary enc's switch
 
 //global settings
 int g_scale[12][2] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //placeholder for the scale of notes to be worked within
+
 int clkDivider = 96/16; //  96/n  for nth notes  96*n for superwhole
 int g_root = 60; //root note value -- all other note values are offsets of this -- 60 == Middle C
 
+//menu index variables (what the display is  focussed on, and it's current setting's index (for retrieving display text)
 volatile int menuIndex = 0;
+bool subMenuSelected = false;
+int g_scaleIndex = MAJ_DIA;
+int g_clockDivIndex = SIXTEENTH;
+int g_playModeIndex = CHORD;
+int g_clockSrcIndex = CS_EXT;
+int g_arpTypeIndex = 0; //unimplemented right now...
 
 
-
-
-//value testing data -- before inputs avail
+//arrays holding step data to be populated from knobs -- initialized with test data
 int in_note[8][2] =    {{0, 1},  //octave, position
                         {0, 2},
                         {0, 3},
@@ -58,15 +61,14 @@ int in_note[8][2] =    {{0, 1},  //octave, position
                         {0, 6},
                         {0, 7},
                         {1, 1}
-                       };
-             
+                       };             
 int in_velocity[8] = {110,90,80,90, -10,50,50,50}; //velocity value == <0 indicates reset steps (needs testing)
 int in_length[8] = {4,8,4,8, 1,1,1,1}; // how many clock divs to count for this step	
-int in_duration[8][2] ={{HOLD, 0},  //gatemode, value 0-800ish
-						{REPEAT, 50},   //when gate == ONCE, play for single clockdiv
-						{REPEAT, 800},   //when gate == REPEAT, repeat for first X number of divs
-						{ONCE, 300},   //                     where X = val/(800/lengthcount)+1??
-						{HOLD, 800},   //when HOLD = play & sustain for whole step
+int in_duration[8][2] ={{HOLD, 0},    //gatemode, value 0-800ish
+						{REPEAT, 50}, //when gate == ONCE, play for single clockdiv
+						{REPEAT, 800},//when gate == REPEAT, repeat for first X number of divs
+						{ONCE, 300},  //                     where X = val/(800/lengthcount)+1??
+						{HOLD, 800},  //when HOLD = play & sustain for whole step
 						{HOLD, 800},
 						{HOLD, 0},
 						{HOLD, 0}
@@ -114,25 +116,6 @@ void pollEncoder(){
   
 }
 
-//void encoderISR(void){
-//  static unsigned long lastInterruptTime = 0;
-//  unsigned long interruptTime = millis();
-//  bool swPressed = false;
-//  
-//  // If interrupts come faster than 5ms, assume it's a bounce and ignore
-//  if (interruptTime - lastInterruptTime > 50) {
-//    swPressed = digitalRead(rotaryEncoderSwPin);
-//    if (digitalRead(rotaryEncoderPin[1]) == LOW)  {
-//      menuNavigate(swPressed,false);
-//    }
-//    else {
-//      menuNavigate(swPressed,true); // Could be +5 or +10
-//    }  
-//  }
-//  // Keep track of when we were here last (no more than every 5ms)
-//  lastInterruptTime = interruptTime;  
-//}
-
 void menuNavigate(bool submenu, bool increment){
   if(!submenu){    
     //navigate in submenu
@@ -174,36 +157,108 @@ void menuNavigate(bool submenu, bool increment){
 }
 
 void modifyKey(bool increment){
-  
+		
+	if(increment){
+		if(g_root < noteMax) //im thinking key should bottom out rather than wrap around
+			g_root++;		
+	}else{
+		if( g_root > noteMin)
+			g+root--;
+	};
 }
 void modifyScale(bool increment){
-  
+	if(increment){		
+		g_scaleIndex++;
+		if(g_scaleIndex > SCALE_ITEMCOUNT)
+			g_scaleIndex = 0;
+	}else{
+		g_scaleIndex--;
+		if(g_scaleIndex < 0)
+			g_scaleIndex = SCALE_ITEMCOUNT-1;
+	}
 }
 void modifyPlayMode(bool increment){
-  
+	if(increment){
+		g_playModeIndex++;
+		if(g_playModeIndex > PLAY_MODES_ITEMCOUNT)
+			g_playModeIndex = 0;
+	}else{
+		g_playModeIndex--;
+		if(g_playModeIndex < 0)
+			g_playModeIndex = PLAY_MODES_ITEMCOUNT-1;
+	}
 }
 void modifyClockDiv(bool increment){
-  
+  if(increment){
+		if(g_clockDivIndex < CLOCK_DIVS_ITEMCOUNT-1) //clock div should bottom out rather than wrap around
+			g_clockDivIndex++;
+	}else{
+		if(g_clockDivIndex > 0)
+			g_clockDivIndex--;		
+	}
 }
 void modifyArpType(bool increment){
-  
+	if(increment){
+		g_arpTypeIndex++;
+		if(g_arpTypeIndex > ARPTYPE_ITEMCOUNT)
+			g_arpTypeIndex = 0;
+	}else{
+		g_arpTypeIndex--;
+		if(g_arpTypeIndex < 0)
+			g_arpTypeIndex = ARPTYPE_ITEMCOUNT-1;
+	}
 }
 void modifyClockSource(bool increment){
-  
+	if(increment){
+		g_clockSrcIndex++;
+		if(g_clockSrcIndex >CLKSRC_ITEMCOUNT)
+			g_clockSrcIndex = 0;
+	}else{
+		g_clockSrcIndex--;
+		if(g_clockSrcIndex < 0)
+			g_clockSrcIndex = CLOCKSRC_ITEMCOUNT-1;
+	}
 }
-
 
 void updateDisplay(){
   display.clearDisplay();
   display.setCursor(0,0);
   display.setTextSize(2);
   display.setTextColor(SSD1306_WHITE);
-  //display.println("The value is:");
-  display.println(MENU_TEXT[menuIndex]);
-  //display.print("time ");
-  display.println(millis());
   
+  if(!subMenuSelected)
+	  display.print(">");
+  display.println(MENU_TEXT[menuIndex]);
+  
+  if(subMenuSelected)
+	  display.print(">");
+  if(menuIndex == MI_KEY){
+	  display.print(getNoteLetter(g_root));
+	  display.println(getNoteOctave(g_root));
+  }else{
+	display.println(getSubMenuText());
+  }
   display.display();
+}
+
+char* getSubMenuText(){
+	switch(menuIndex){
+      case MI_SCALE: 
+        return SCALE_TEXT[g_scaleIndex];
+        break;
+      case  MI_PLAYMODE: 
+        return PLAY_MODES_TEXT[g_playModeIndex];
+        break;
+      case  MI_CLOCKDIV: 
+        return CLK_DIV_TEXT[g_clockDivIndex];
+        break;
+      case  MI_ARPTYPE: 
+        return ARPTYPE_TEXT[g_arpTypeIndex];
+        break;
+      case  MI_CLOCKSRC:
+        return CLKSRC_TEXT[g_clockSrcIndex];
+        break;
+    }
 }
 
 void pollStep(int s){
