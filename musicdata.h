@@ -65,40 +65,6 @@ static int MIN_CHORD_PROG[12][2] = {      {0,MIN},
 
 
 
-/*
-static byte SCALE_CHRO[12] = {0,1,2,3,4,5,6,7,8,9,10,11};
-static byte SCALE_MAJ_DIA[7] = {0,2,4,5,7,9,11};
-static byte SCALE_MIN_DIA[7] = {0,2,3,5,7,9,10};
-
-static byte TRIAD_MAJ[3] = {0,4,7}; //0
-static byte TRIAD_MIN[3] = {0,3,7}; //1
-static byte TRIAD_DIM[3] = {0,3,6}; //2
-static byte TRIAD_SUS2[3] = {0,2,7}; //3
-static byte TRIAD_SUS4[3] = {0,5,7}; //4
-
-static byte INTERVAL_MAJ_THIRD[3] = {0,4};
-static byte INTERVAL_MIN_THIRD[3] = {0,3};
-static byte INTERVAL_FIFTH[3] = {0,7};
-
-static byte MAJ_CHORD_PROG[7][2] = { {0,MAJ},
-                                          {2,MIN},
-                                          {4,MIN},
-                                          {5,MAJ},
-                                          {7,MAJ},
-                                          {9,MIN},
-                                          {11,DIM} };
-
-                                          
-static byte MIN_CHORD_PROG[7][2] = { {0,MIN},
-                                          {2,DIM},
-                                          {3,MAJ},
-                                          {5,MIN},
-                                          {7,MIN},
-                                          {8,MAJ},
-                                          {10,MAJ} };
-
-*/
-
 
 int * chordFromForm(int form){
     switch(form){
@@ -126,15 +92,14 @@ int * chordFromForm(int form){
  //maj min dim sus2 sus4  
 }
 
-char* getNoteLetter(int noteVal){
-  char LETTERS[12][3] = {"C","C#","D","D#","E","F","F#","G","G#","A","#","B"};
+char LETTERS[12][3] = {"C","C#","D","D#","E","F","F#","G","G#","A","#","B"};
+
+char* getNoteLetter(int noteVal){  
   return LETTERS[noteVal%12];
 }
 
 int getNoteOctave(int noteVal){
   return ((noteVal / 12)-1);
 }
-
-
 
 #endif // _MUSICDATA_H

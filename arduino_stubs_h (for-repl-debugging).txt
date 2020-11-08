@@ -1,0 +1,23 @@
+#ifndef _ARDUINO_STUBS_H_
+#define _ARDUINO_STUBS_H_
+//stubbed out arduino shizzy
+
+void pinMode(int,int){};
+int digitalRead(int){return 0;};
+int analogRead(int) {return 0;};
+
+void digitalWrite(int,int){
+
+};
+
+void analogWrite(int,int){
+
+
+};
+
+int HIGH,OUTPUT,INPUT,LOW,INPUT_PULLUP;
+
+void MIDI_CREATE_DEFAULT_INSTANCE(void){};
+
+
+#endif // _ARDUINO_STUBS_H_
