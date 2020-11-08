@@ -1,3 +1,6 @@
+#include <MemoryFree.h>
+#include <pgmStrToRAM.h>
+
 #include <splash.h>
 #include <MIDI.h>
 #include <SPI.h>
@@ -8,8 +11,8 @@
 #include "musicdata.h"
 #include "pins.h"
 
-
-MIDI_CREATE_DEFAULT_INSTANCE();
+//MIDI_CREATE_DEFAULT_INSTANCE();
+MIDI_CREATE_INSTANCE(HardwareSerial, Serial3, MIDI);
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -42,8 +45,7 @@ int g_scale_max = 12;
 
 int clkDivider = 96/8; //  96/n  for nth notes  96*n for superwhole
 
-int g_root = 60; //root note value -- all other note values are offsets of this -- 60 == Middle C
-int g_key = 60; //some sort of access violation w g_root incrementing with midi read code accessing it. going to try to modify key and assign root it's value on occasion
+int g_key = 60; //root note value -- all other note values are offsets of this -- 60 == Middle C
 
 //menu index variables (what the display is  focussed on, and it's current setting's index (for retrieving display text)
 int menuIndex = MENU_ITEMCOUNT-1;
@@ -122,8 +124,11 @@ void pollEncoder(){
     encoderVal = digitalRead(rotaryEncoderPin[0]);
     if(encoderVal != encoderPrevVal){
       changeTime = millis();
-      if(changeTime - lastChangeTime > 75){ //if last change was less than X ms ago, ignore it... (debouncing)          
-        menuNavigate(subMenuSelected,(encoderVal == digitalRead(rotaryEncoderPin[1])));        
+      if(changeTime - lastChangeTime > 75){ //if last change was less than X ms ago, ignore it... (debouncing)  
+
+        bool increment = (encoderVal != digitalRead(rotaryEncoderPin[1]));
+                       
+        menuNavigate(subMenuSelected, increment);        
         updateDisplay();
         lastChangeTime = changeTime;
       }
@@ -131,7 +136,11 @@ void pollEncoder(){
     encoderPrevVal = encoderVal;   
 }
 
-void menuNavigate(bool submenu, bool increment){
+void menuNavigate(bool submenu, bool increment){  
+  Serial.print(submenu);
+  Serial.println(increment);
+  memoryLog();
+  
   if(!submenu){    
     //navigate in submenu
     if(increment){
@@ -148,29 +157,54 @@ void menuNavigate(bool submenu, bool increment){
   }
   
   if(submenu){
-    switch(menuIndex){      
-      case MI_SCALE: 
+    Serial.print("Submenu ");
+    Serial.println(menuIndex);
+    
+    if(menuIndex == MI_SCALE){
         modifyScale(increment);
-        break;
-      case  MI_PLAYMODE: 
-        modifyPlayMode(increment);
-        break;
-      case  MI_CLOCKDIV: 
-        modifyClockDiv(increment);
-        break;
-      case  MI_ARPTYPE: 
-        modifyArpType(increment);
-        break;
-      case  MI_CLOCKSRC:
-        modifyClockSource(increment);
-        break;
-      case  MI_BPM:
-        modifyBPM(increment);
-        break;
-      case MI_KEY: 
-        modifyKey(increment);
-        break;
     }
+    if(menuIndex == MI_PLAYMODE){
+        modifyPlayMode(increment);
+    }
+    if(menuIndex == MI_CLOCKDIV){
+        modifyClockDiv(increment);
+    }
+    if(menuIndex == MI_ARPTYPE){
+      modifyArpType(increment);   
+    }
+    if(menuIndex == MI_CLOCKSRC){
+        modifyClockSource(increment);
+    }
+    if(menuIndex == MI_BPM){
+        modifyBPM(increment);
+    }
+    if(menuIndex == MI_KEY){
+        modifyKey(increment);
+    }
+    
+//    switch(menuIndex){      
+//      case MI_SCALE: 
+//        modifyScale(increment);
+//        break;
+//      case  MI_PLAYMODE: 
+//        modifyPlayMode(increment);
+//        break;
+//      case  MI_CLOCKDIV: 
+//        modifyClockDiv(increment);
+//        break;
+//      case  MI_ARPTYPE: 
+//        modifyArpType(increment);
+//        break;
+//      case  MI_CLOCKSRC:
+//        modifyClockSource(increment);
+//        break;
+//      case  MI_BPM:
+//        modifyBPM(increment);
+//        break;
+//      case MI_KEY: 
+//        modifyKey(increment);
+//        break;
+//    }
   }   
 }
 
@@ -178,6 +212,8 @@ void menuNavigate(bool submenu, bool increment){
 
 
 void modifyScale(bool increment){
+	Serial.print("scale ");
+  Serial.println(increment);
 	if(increment){		
 		g_scaleIndex++;
 		if(g_scaleIndex > SCALE_ITEMCOUNT-1)
@@ -191,6 +227,8 @@ void modifyScale(bool increment){
 }
 
 void modifyPlayMode(bool increment){
+	Serial.print("pm ");
+  Serial.println(increment);
 	if(increment){
 		g_playModeIndex++;
 		if(g_playModeIndex > PLAY_MODES_ITEMCOUNT-1)
@@ -203,6 +241,8 @@ void modifyPlayMode(bool increment){
 }
 
 void modifyClockDiv(bool increment){
+  Serial.print("clkdiv ");
+  Serial.println(increment);
   if(increment){
 		if(g_clockDivIndex < CLOCK_DIVS_ITEMCOUNT-1) //clock div should bottom out rather than wrap around
 			g_clockDivIndex++;
@@ -210,9 +250,12 @@ void modifyClockDiv(bool increment){
 		if(g_clockDivIndex > 0)
 			g_clockDivIndex--;		
 	}
+ clkDivider = CLK_DIVS[g_clockDivIndex];
 }
 
 void modifyArpType(bool increment){
+	Serial.print("arpty ");
+  Serial.println(increment);
 	if(increment){
 		g_arpTypeIndex++;
 		if(g_arpTypeIndex > ARPTYPE_ITEMCOUNT-1)
@@ -225,6 +268,8 @@ void modifyArpType(bool increment){
 }
 
 void modifyClockSource(bool increment){
+	Serial.print("clksc ");
+  Serial.println(increment);
 	if(increment){
 		g_clockSrcIndex++;
 		if(g_clockSrcIndex >CLKSRC_ITEMCOUNT-1)
@@ -237,6 +282,8 @@ void modifyClockSource(bool increment){
 }
 
 void modifyBPM(bool increment){
+  Serial.print("bpm ");
+  Serial.println(increment);
   if(increment){
     if(g_bpm < bpmMax)
       g_bpm++;
@@ -247,10 +294,12 @@ void modifyBPM(bool increment){
 }
 
 void modifyKey(bool increment){
+  Serial.print("ky ");
+  Serial.println(increment);
   //for some reason, modifying key while midi stack is running crashes the whole system...
   //commenting out this block and everything runs, or commenting out Midi.read();
   //using external clock toggle to allow changing while not running
-  if(digitalRead(extClockTogglePin) != HIGH){
+  //if(digitalRead(extClockTogglePin) != HIGH){
     if(increment){
       if(g_key < noteMax)
         g_key++;
@@ -258,7 +307,7 @@ void modifyKey(bool increment){
       if(g_key > noteMin)
         g_key--;
     }
-  }
+  //}
 }
 
 void updateDisplay(){
@@ -280,13 +329,21 @@ void updateDisplay(){
   if(menuIndex == MI_KEY){
 	  display.print(getNoteLetter(g_key));	  
 	  display.println(getNoteOctave(g_key));
-    display.println(g_key);
+    //display.println(g_key);
   }else if(menuIndex == MI_BPM){
     display.println(g_bpm);
   }else{
 	  display.println(getSubMenuText());
   }
   display.display();
+}
+
+void memoryLog(){
+        Serial.print(millis());
+        Serial.print(" ");
+        Serial.print(menuIndex);
+        Serial.print(" ");
+        Serial.println(freeMemory());
 }
 
 char* getSubMenuText(){
@@ -376,6 +433,7 @@ void chordOn(int key, int chord[12], int velocity){
 }
 
 void chordOff(int key, int chord[12]){
+  
   if(g_playModeIndex == CHORD){
     for (int i=0; i<12; i++){
       if(chord[i]<0)
@@ -417,7 +475,9 @@ void setGlobalScale(int newscale[12][2]){
   }  
 }
 
-void setup(){
+void setup(){ 
+
+  Serial.begin(9600);
   
   //initialize LED mux pins
   for(int i=0; i<5;i++){
@@ -445,9 +505,6 @@ void setup(){
   MIDI.setHandleStop(handleStop);
   MIDI.setHandleClock(handleClock);
  
-
-//Serial.begin(9600);
-
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   // Show initial display buffer contents on the screen --
@@ -477,13 +534,13 @@ void internalClockTick(){
 // the main running loop,  should put as few things here as possible to reduce latency
 void loop(){
   //if toggle switch is on, either listen for midi signals or start internal midi pulsing
-  if(false){//digitalRead(extClockTogglePin) == HIGH){
+  if(true){//digitalRead(extClockTogglePin) == HIGH){
     if(g_clockSrcIndex == CS_EXT){
       MIDI.read();
     }  
-    if(g_clockSrcIndex == CS_INT){  
-      internalClockTick();
-    }
+//    if(g_clockSrcIndex == CS_INT){  
+//      internalClockTick();
+//    }
   }
   
   pollEncoder();
@@ -520,7 +577,7 @@ void handleClock(void){
     
     if( isFirstStep || (isRepeating && isWithinPattern)){
       //play the step
-      stepOn(g_root, g_scale, in_note[stepindex][0], in_note[stepindex][1], in_velocity[stepindex]);       
+      stepOn(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1], in_velocity[stepindex]);       
     }   
     
     writeMuxLED(stepindex,HIGH);      
@@ -536,7 +593,7 @@ void handleClock(void){
           || (in_duration[stepindex][0]==ONCE && stepLengthIndex == 0) //ONCE && stepindex == 0
           || (in_duration[stepindex][0]==REPEAT) //REPEAT at every step-end (if note is on)
          ){
-            stepOff(g_root, g_scale, in_note[stepindex][0], in_note[stepindex][1]); 
+            stepOff(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1]); 
         }
     } 
     
@@ -569,7 +626,7 @@ void handleClock(void){
   if(clk>=0 && ((clk+1)%CLK_DIVS[SIXTEENTH]==0) ){
     digitalWrite(clkPin,LOW);
   }    
-
+  
   //increment clock, reset when > max
   clk++;
   if(clk>clkMax-1){

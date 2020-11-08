@@ -95,7 +95,7 @@ int * chordFromForm(int form){
  //maj min dim sus2 sus4  
 }
 
-char LETTERS[12][3] = {"C","C#","D","D#","E","F","F#","G","G#","A","#","B"};
+char LETTERS[12][3] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 
 char* getNoteLetter(int noteVal){  
   return LETTERS[noteVal%12];
