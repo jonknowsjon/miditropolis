@@ -21,3 +21,69 @@ void MIDI_CREATE_DEFAULT_INSTANCE(void){};
 
 
 #endif // _ARDUINO_STUBS_H_
+
+/*
+//debug version of chordOn/Off
+//replace regular with this one in debug
+void chordOn(int key, int chord[12], int velocity){
+        std::cout << "clk:   ";
+        std::cout << clk;
+        std::cout << "\t";
+        std::cout << "step: ";
+        std::cout << stepindex;
+        std::cout << "\t";
+        std::cout << "lenidx: ";
+        std::cout << stepLengthIndex;
+        std::cout << "\t";
+        
+        for (int i=0; i<12; i++){
+          if(chord[i]<0)
+            break;
+
+           std::cout << getNoteLetter(key+chord[i]);
+           std::cout << getNoteOctave(key+chord[i]);
+           std::cout << "|";
+
+
+          //MIDI.sendNoteOn(key+chord[i], velocity, 1);
+          //digitalWrite(clkPin, HIGH);
+          
+        }
+
+      std::cout << "\n";
+}
+
+void chordOff(int key, int chord[12]){
+        std::cout << "clk:   ";
+        std::cout << clk;
+        std::cout << "\t";
+        std::cout << "step: ";
+        std::cout << stepindex;
+        std::cout << "\t";
+        std::cout << "lenidx: ";
+        std::cout << stepLengthIndex;
+        std::cout << "\t --------\n";
+        
+
+
+        for (int i=0; i<12; i++){
+          if(chord[i]<0)
+            break;
+          
+          //MIDI.sendNoteOff(key+chord[i], 0, 1);
+          digitalWrite(clkPin,LOW);                                   
+        }
+}
+// debug main method for repl.it
+//sets everything up and runs through several measures of clock data
+int main() {
+  
+  setup();
+  handleStart();
+
+  for(int x=0;x<1024;x++){
+    handleClock();
+  }
+}
+
+*/

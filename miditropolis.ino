@@ -45,11 +45,17 @@ int in_note[8][2] =    {{0, 1},  //octave, position
                         {1, 1}
                        };
              
-int in_velocity[8] = {110,90,80,90, 50,50,50,50}; //velocity value == <0 indicates reset steps (needs testing)
-int in_length[8] = {1,1,1,1, 1,1,1,1}; // how many clock divs to count for this step
-int in_duration[8] = {0,0,0,0, 0,0,0,0};  //How long each note lasts -- TBD, may also be a gate mode (whether for longer lengths note repeated, or once)  
-                                          //^^^??? First half 1 hit in increments of length setting, second half all hits in increments of length                              
-
+int in_velocity[8] = {110,90,80,90, -10,50,50,50}; //velocity value == <0 indicates reset steps (needs testing)
+int in_length[8] = {8,8,8,8, 1,1,1,1}; // how many clock divs to count for this step	
+int in_duration[8][2] ={{HOLD, 0},  //gatemode, value 0-800ish
+						{REPEAT, 50},   //when gate == ONCE, play for single clockdiv
+						{REPEAT, 550},   //when gate == REPEAT, repeat for first X number of divs
+						{ONCE, 300},   //                     where X = val/(800/lengthcount)+1??
+						{HOLD, 800},   //when HOLD = play & sustain for whole step
+						{HOLD, 800},
+						{HOLD, 0},
+						{HOLD, 0}
+					   };
 
 
 
@@ -180,40 +186,76 @@ void handleStop(void){
 }
 
 //attempt at handling via a measure clock and subdividing from it
-void handleClock(void){    
-    
-    
-  if(clk>=0 && (clk%clkDivider==0)){
-      //clock is on the trigger pulse for a step      
-      stepOn(g_root, g_scale, in_note[stepindex][0], in_note[stepindex][1], in_velocity[stepindex]);      
-      writeMuxLED(stepindex,HIGH);
-      //digitalWrite(clkPin,HIGH);
-    }
-    
-    if(clk>=0 && ((clk+1)%clkDivider==0) ){
-      //clock is on the pulse before next trigger, turn off last step's note
-      if(noteOn){        
-        stepOff(g_root, g_scale, in_note[stepindex][0], in_note[stepindex][1]);        
-        //digitalWrite(clkPin,LOW);
-        writeMuxLED(stepindex,LOW);
-        
-    
-    //TODO increment steplengthindex
-    //test to see if steplength > lengthVal-1
-    //if so - reset steplengthindex, poll next step, increment stepindex
-    pollStep(stepindex+1);
-    stepindex++;
-      }          
-    }      
-    
-  clk++;
-    if(clk>clkMax-1){
-      clk = 0;
-    }
-    
+void handleClock(void){
   
-  //TODO add condition --  || in_velocity[stepindex] < 0
-    if(stepindex>stepMax-1){
-      stepindex = 0;
-    }
+  if(clk>=0 && (clk%clkDivider==0)){
+    //clock is on the trigger pulse for a step      
+    
+    //at the first step (for all modes)
+    bool isFirstStep = (stepLengthIndex == 0);
+    //determine if mode is set to repeating
+    bool isRepeating = (in_duration[stepindex][0]==REPEAT);
+    //determine if step is within repeating mode's pattern length value
+    bool isWithinPattern = (stepLengthIndex > 0 && stepLengthIndex < in_duration[stepindex][1]/(DURATION_MAX/in_length[stepindex])+1);
+    
+    if( isFirstStep || (isRepeating && isWithinPattern)){
+      //play the step
+      stepOn(g_root, g_scale, in_note[stepindex][0], in_note[stepindex][1], in_velocity[stepindex]);       
+    }   
+    
+    writeMuxLED(stepindex,HIGH);      
+  }
+  
+  if(clk>=0 && ((clk+1)%clkDivider==0) ){    
+    //clock is on the pulse before next trigger, time to stop notes (when appropriate) 
+    //and increment counters
+    
+    if(noteOn){
+      if( 
+          (in_duration[stepindex][0]==HOLD && stepLengthIndex == in_length[stepindex]-1)//HOLD && stepindex == max-1
+          || (in_duration[stepindex][0]==ONCE && stepLengthIndex == 0) //ONCE && stepindex == 0
+          || (in_duration[stepindex][0]==REPEAT) //REPEAT at every step-end (if note is on)
+         ){
+            stepOff(g_root, g_scale, in_note[stepindex][0], in_note[stepindex][1]);       
+
+        }
+    } 
+    
+    writeMuxLED(stepindex,LOW);
+    
+    stepLengthIndex++; 
+    if(stepLengthIndex > in_length[stepindex]-1){ //determine if last beat within step
+      stepLengthIndex = 0; //if so, reset step length counter
+      pollStep(stepindex+1); //read next step's data from knobs
+      
+      //test to see if next step's velocity < 0 (flag for stop seq);
+      if((stepindex < stepMax-1) && (in_velocity[stepindex+1] < 0)){
+        stepindex = 0;
+      }else{
+        stepindex++;
+      }
+    }         
+  }
+
+  //step may have been freshly incremented above, set to 0 if over max
+  if(stepindex>stepMax-1){
+    stepindex = 0;
+  }      
+  
+
+  //LED logic: clock pulse on quarter notes (regardless of divider setting)
+  if(clk>=0 && (clk%CLK_DIVS[QUARTER]==0)){
+      digitalWrite(clkPin,HIGH);
+  }
+  //LED logic: turn off before next sixteenth
+  if(clk>=0 && ((clk+1)%CLK_DIVS[SIXTEENTH]==0) ){
+    digitalWrite(clkPin,LOW);
+  }  
+  
+
+  //increment clock, reset when > max
+  clk++;
+  if(clk>clkMax-1){
+    clk = 0;
+  }
 }
