@@ -1,9 +1,22 @@
+#include <splash.h>
 #include <MIDI.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include "constants.h"
 #include "musicdata.h"
 #include "pins.h"
 
 MIDI_CREATE_DEFAULT_INSTANCE();
+
+
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+#define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+
 
 //timing variables
 int clk = 0; //counter for midi clock pulses (24 per quarter note)
@@ -17,13 +30,13 @@ const int clkMax=96*4; //max clock value: 4 measures worth...
              //4 measures allows for breve notes (double whole)
 
 //hacky timing variables -- modify these to tweak the processing lag between clock rcv and note out
-bool hasOffset = false;
+bool hasOffset = true;
 int clkOffset = (24*4); //processing lag... allow a clock run-up to next measure to sync at beginning
 
 
 //display & selection variables
 int encoderVal, encoderPrevVal; //current + previous values for rotary encoder
-bool swState, swPrevState; //current + previous values for rotary enc's switch
+bool encoderSwVal; //value for rotary enc's switch
 
 
 //global settings
@@ -31,7 +44,9 @@ int g_scale[12][2] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //placeh
 int clkDivider = 96/16; //  96/n  for nth notes  96*n for superwhole
 int g_root = 60; //root note value -- all other note values are offsets of this -- 60 == Middle C
 
-int stepMax = 8; //should be done away with after -1 testing?
+volatile int menuIndex = 0;
+
+
 
 
 //value testing data -- before inputs avail
@@ -46,10 +61,10 @@ int in_note[8][2] =    {{0, 1},  //octave, position
                        };
              
 int in_velocity[8] = {110,90,80,90, -10,50,50,50}; //velocity value == <0 indicates reset steps (needs testing)
-int in_length[8] = {8,8,8,8, 1,1,1,1}; // how many clock divs to count for this step	
+int in_length[8] = {4,8,4,8, 1,1,1,1}; // how many clock divs to count for this step	
 int in_duration[8][2] ={{HOLD, 0},  //gatemode, value 0-800ish
 						{REPEAT, 50},   //when gate == ONCE, play for single clockdiv
-						{REPEAT, 550},   //when gate == REPEAT, repeat for first X number of divs
+						{REPEAT, 800},   //when gate == REPEAT, repeat for first X number of divs
 						{ONCE, 300},   //                     where X = val/(800/lengthcount)+1??
 						{HOLD, 800},   //when HOLD = play & sustain for whole step
 						{HOLD, 800},
@@ -80,10 +95,115 @@ int readMuxValue(const unsigned inputMuxPins[], const unsigned signalPin, int mu
 }
 ///////////////////////////////////////////////////////////
 
+void pollEncoder(){
+  //debouncing variables
+  static unsigned long lastChangeTime = 0;  
+  unsigned long changeTime;  
+  
+    encoderSwVal = digitalRead(rotaryEncoderSwPin);  
+    encoderVal = digitalRead(rotaryEncoderPin[0]);
+    if(encoderVal != encoderPrevVal){
+      changeTime = millis();
+      if(changeTime - lastChangeTime > 150){ //if last change was less than X ms ago, ignore it... (debouncing)          
+        menuNavigate(!digitalRead(rotaryEncoderSwPin),(encoderVal != digitalRead(rotaryEncoderPin[1])));        
+        updateDisplay();
+        lastChangeTime = changeTime;
+      }
+    }
+    encoderPrevVal = encoderVal;    
+  
+}
 
-void pollEncoder(void){
-  //read state information for the encoder, if changed, handle the change, display
+//void encoderISR(void){
+//  static unsigned long lastInterruptTime = 0;
+//  unsigned long interruptTime = millis();
+//  bool swPressed = false;
+//  
+//  // If interrupts come faster than 5ms, assume it's a bounce and ignore
+//  if (interruptTime - lastInterruptTime > 50) {
+//    swPressed = digitalRead(rotaryEncoderSwPin);
+//    if (digitalRead(rotaryEncoderPin[1]) == LOW)  {
+//      menuNavigate(swPressed,false);
+//    }
+//    else {
+//      menuNavigate(swPressed,true); // Could be +5 or +10
+//    }  
+//  }
+//  // Keep track of when we were here last (no more than every 5ms)
+//  lastInterruptTime = interruptTime;  
+//}
 
+void menuNavigate(bool submenu, bool increment){
+  if(!submenu){    
+    //navigate in submenu
+    if(increment){
+      //increment menu selection 
+      menuIndex++;
+      if(menuIndex > MENU_ITEMCOUNT-1)
+        menuIndex = 0;
+    }else{
+      //decrement menu selection      
+      menuIndex--;
+      if(menuIndex < 0)
+        menuIndex = MENU_ITEMCOUNT-1;
+    }    
+  }
+  
+  if(submenu){
+    switch(menuIndex){
+      case MI_KEY: 
+        modifyKey(increment);
+        break;
+      case MI_SCALE: 
+        modifyScale(increment);
+        break;
+      case  MI_PLAYMODE: 
+        modifyPlayMode(increment);
+        break;
+      case  MI_CLOCKDIV: 
+        modifyClockDiv(increment);
+        break;
+      case  MI_ARPTYPE: 
+        modifyArpType(increment);
+        break;
+      case  MI_CLOCKSRC:
+        modifyClockSource(increment);
+        break;
+    }
+  }  
+}
+
+void modifyKey(bool increment){
+  
+}
+void modifyScale(bool increment){
+  
+}
+void modifyPlayMode(bool increment){
+  
+}
+void modifyClockDiv(bool increment){
+  
+}
+void modifyArpType(bool increment){
+  
+}
+void modifyClockSource(bool increment){
+  
+}
+
+
+void updateDisplay(){
+  display.clearDisplay();
+  display.setCursor(0,0);
+  display.setTextSize(2);
+  display.setTextColor(SSD1306_WHITE);
+  //display.println("The value is:");
+  display.println(MENU_TEXT[menuIndex]);
+  //display.print("time ");
+  display.println(millis());
+  
+  display.display();
 }
 
 void pollStep(int s){
@@ -149,23 +269,40 @@ void setGlobalScale(int newscale[12][2]){
 
 void setup(){
   
-    //initialize LED mux pins
+  //initialize LED mux pins
   for(int i=0; i<5;i++){
     pinMode(ledMuxPins[i], OUTPUT);    
   }
-  pinMode(clkPin, OUTPUT);  
+  //TODO initialize knob input mux pins
+
   
-    setGlobalScale(MAJ_CHORD_PROG);
+  
+  pinMode(clkPin, OUTPUT);
+  pinMode(rotaryEncoderPin[0],INPUT);
+  pinMode(rotaryEncoderPin[1],INPUT);
+  pinMode(rotaryEncoderSwPin,INPUT_PULLUP);
+  
+  setGlobalScale(MAJ_CHORD_PROG);
   
   MIDI.begin(MIDI_CHANNEL_OMNI);                      // Launch MIDI and listen to all channels
-    MIDI.setHandleStart(handleStart);
+  MIDI.setHandleStart(handleStart);
   MIDI.setHandleStop(handleStop);
-    MIDI.setHandleClock(handleClock);
+  MIDI.setHandleClock(handleClock);
+  
+  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  // Show initial display buffer contents on the screen --
+  // the library initializes this with an Adafruit splash screen.
+  display.display();
+  delay(2000);
+  updateDisplay();
+
+  
 }
 
 void loop(){
-  MIDI.read();
-  
+  MIDI.read();  
+
   pollEncoder();
 }
 
@@ -216,8 +353,7 @@ void handleClock(void){
           || (in_duration[stepindex][0]==ONCE && stepLengthIndex == 0) //ONCE && stepindex == 0
           || (in_duration[stepindex][0]==REPEAT) //REPEAT at every step-end (if note is on)
          ){
-            stepOff(g_root, g_scale, in_note[stepindex][0], in_note[stepindex][1]);       
-
+            stepOff(g_root, g_scale, in_note[stepindex][0], in_note[stepindex][1]); 
         }
     } 
     

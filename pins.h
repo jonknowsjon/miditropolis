@@ -12,8 +12,8 @@ static const unsigned row34MuxPins[4] = {26,27,28,29}; //pins for multiplexer fo
 static const unsigned row12SignalPin = 8;
 static const unsigned row34SignalPin = 9;
 
-static const unsigned rotaryEncoderPin[2] = {40,41}; //two pins for rotary encoder values
-static const unsigned rotaryEncoderSwPin = 42;
+static const unsigned rotaryEncoderPin[2] = {2,3}; //two pins for rotary encoder values, attached to ISR interrupt pins
+static const unsigned rotaryEncoderSwPin = 46;
 
 
 

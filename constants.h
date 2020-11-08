@@ -1,6 +1,8 @@
 #ifndef _CONSTANTS_H
 #define _CONSTANTS_H
 
+const int stepMax = 8; //number of steps being programmed for (don't change this unless you're looking to add/remove knobs and tweak array sizes)
+
 const int MENU_ITEMCOUNT = 6;
 enum MENU_ITEMS_EN {MI_KEY, MI_SCALE, MI_PLAYMODE, MI_CLOCKDIV, MI_ARPTYPE, MI_CLOCKSRC};
 const char MENU_TEXT[8][14] = {"KEY", "SCALE", "NOTE MODE", "CLK DIV", "ARP TYPE", "CLOCK SRC"};
