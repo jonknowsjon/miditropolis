@@ -71,7 +71,7 @@ bool encoderSwVal; //value for rotary enc's switch
 //global settings
 int g_key = 60; //root note value -- all other note values are offsets of this -- 60 == Middle C
 int g_scale[12][2] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //placeholder for the scale of notes to be worked within
-int g_scale_max = 12;
+int g_scale_max = 12; //number of notes in scale
 
 //menu index variables (what the display is  focussed on, and it's current setting's index (for retrieving display text)
 int menuIndex = MI_INFO;
@@ -144,8 +144,8 @@ int readMuxValue(const unsigned inputMuxPins[], const unsigned signalPin, int mu
 void pollStep(int s){
   //poll the knob settings for step s and write them to their corresponding array positions
 
-//  Serial.print("Polling step: ");
-//  Serial.println(s);
+  Serial.print("Polling step: ");
+  Serial.println(s);
  
   //get positions (0-1023)
   int noteVal = readMuxValue(row12MuxPins, row12SignalPin, 0, s);
@@ -161,7 +161,7 @@ void pollStep(int s){
   
   //perform logic based on position divisions
   int note_octave = map(noteVal,0,1023,-1,2);
-  int note_val =  map(noteVal,0,1023,0,36)%12;
+  int note_val =  map(noteVal,0,1023,0,3*g_scale_max)%g_scale_max;
   int dur_mode =  map(durationVal,0,1023,0,4); //split into 2 quarters + half : HOLD, ONCE, REPEAT*2 
   if(dur_mode >= 2) 
      dur_mode = 2; //Q3 and Q4 = REPEAT = 2;  
@@ -182,14 +182,50 @@ void pollStep(int s){
     vel_val = 0;
   }  
 
-  //assign values to memory
-  in_note[s][0] = note_octave;
-  in_note[s][1] = note_val;
-  in_length[s] = len_val;
-  in_duration[s][0] = dur_mode; 
-  in_duration[s][1] = dur_val;
-  in_velocity[s] = vel_val;
+
+  Serial.print("Step ");
+  Serial.println(s);
+  
+  //test to see if potentiometer readings are enabled, if so, assign its mapped value to memory
+  Serial.print(" note ");
+  Serial.print(POT_ENABLED[0][s]);
+  if(POT_ENABLED[0][s]){
+    in_note[s][0] = note_octave;
+    in_note[s][1] = note_val;
+  }else{
+    in_note[s][0] = DEFAULT_OCTAVE;
+    in_note[s][1] = DEFAULT_NOTE;
+  }
+  Serial.print(" len ");
+  Serial.print(POT_ENABLED[1][s]);
+  if(POT_ENABLED[1][s]){
+    in_length[s] = len_val;
+  }else{
+    in_length[s] = DEFAULT_LENGTH;  
+  }
+  Serial.print(" dur ");
+  Serial.print(POT_ENABLED[2][s]);
+  if(POT_ENABLED[2][s]){
+    in_duration[s][0] = dur_mode; 
+    in_duration[s][1] = dur_val;
+  }else{
+    in_duration[s][0] = DEFAULT_DUR_MODE;
+    in_duration[s][1] = DEFAULT_DURATION;
+  }
+  Serial.print(" vel ");
+  Serial.println(POT_ENABLED[3][s]);
+  if(POT_ENABLED[3][s]){
+    in_velocity[s] = vel_val;  
+  }else{
+    in_velocity[s] = DEFAULT_VELOCITY;
+  }
+
+
+  
 }
+
+
+
 ////////////////////////////END PHYSICAL I / O CODE////////////////////////////////////////////////////////////////////////////////////
 
 

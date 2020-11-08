@@ -57,4 +57,22 @@ enum SEQ_ORDERS_EN {FORWARD,REVERSE, RAND, BROWNIAN, PINGPONG};
 char SEQ_ORDERS_TEXT[5][10] = {"Forward","Reverse", "Random", "Brownian", "PingPong"};
 
 
+
+//table for whether to read the potentiometer or not
+//in the event that some of the pots arent working, this quick n dirty table
+//can allow partial usage/testing while filling in 
+static const bool POT_ENABLED[4][8] = {
+                                        {1,1,1,1,1,1,1,1},
+                                        {0,1,1,1,1,1,1,1},
+                                        {1,1,1,1,1,1,1,1},
+                                        {1,0,0,0,1,0,1,0}
+                                        };
+
+static const int DEFAULT_OCTAVE = 0;
+static const int DEFAULT_NOTE = 0;
+static const int DEFAULT_LENGTH = 1;
+static const int DEFAULT_DURATION = 1;
+static const int DEFAULT_DUR_MODE = ONCE;
+static const int DEFAULT_VELOCITY = 127;
+
 #endif //_CONSTANTS_H

@@ -20,6 +20,7 @@ static const unsigned extClockTogglePin = 25; //when clock source is internal, t
 static const unsigned randomSeedPin = 15; //unconnected pin used for initializing pseudo rng
 
 
+
 //mux pinout
 const bool MUX_TRUTH_TABLE[16][4] = { {0,0,0,0},
                                     {1,0,0,0},
@@ -38,6 +39,9 @@ const bool MUX_TRUTH_TABLE[16][4] = { {0,0,0,0},
                                     {0,1,1,1},
                                     {1,1,1,1},
                                    };
+
+
+                                   
 
 
 #endif //_PINS_H
