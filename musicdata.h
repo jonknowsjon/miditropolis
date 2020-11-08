@@ -1,5 +1,5 @@
-#ifndef _FORMS_H
-#define _FORMS_H
+#ifndef _MUSICDATA_H
+#define _MUSICDATA_H
 
 enum FORMS {MAJ, MIN, DIM, SUS2, SUS4, MAJ3, MIN3, FIFTH, ROOTONLY, UNDEF};
 
@@ -127,4 +127,4 @@ int * chordFromForm(int form){
  //maj min dim sus2 sus4  
 }
 
-#endif // _FORMS_H
+#endif // _MUSICDATA_H
