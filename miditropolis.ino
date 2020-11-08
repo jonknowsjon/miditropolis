@@ -6,8 +6,6 @@
  * 
  * 
  * Physical TODO: 
- * Knob data pins wire
- * Mux wiring harnesses/termination -- skipping for now
  * Feet -- Adhesive vs screwed from within
  *  
  * 
@@ -21,9 +19,7 @@
  * Harmony Midi - for intervals/triads, output on different midi channels for poly using multi instruments?
  * 
  * Needs Testing:
- * Knob values / assignments
- * DebugInfo -- seems to be working
- * Staccato -- seems to be working
+ * PingPong Sequence Order
  * 
  * *************************************************************************************************************************************************
  */
@@ -79,7 +75,7 @@ bool subMenuSelected = false;
 int g_scaleIndex = MAJ_DIA;
 int g_clockDivIndex = EIGHTH;
 int g_playModeIndex = CHORD;
-int g_clockSrcIndex = CS_INT;
+int g_clockSrcIndex = CS_EXT;
 int g_bpm = 120; //bpm value for internal clock 
 int g_arpTypeIndex = 0; //unimplemented right now...
 int g_infoModeIndex = SEQINFO;
@@ -183,12 +179,12 @@ void pollStep(int s){
   }  
 
 
-  Serial.print("Step ");
-  Serial.println(s);
+  //Serial.print("Step ");
+  //Serial.println(s);
   
   //test to see if potentiometer readings are enabled, if so, assign its mapped value to memory
-  Serial.print(" note ");
-  Serial.print(POT_ENABLED[0][s]);
+  //Serial.print(" note ");
+  //Serial.print(POT_ENABLED[0][s]);
   if(POT_ENABLED[0][s]){
     in_note[s][0] = note_octave;
     in_note[s][1] = note_val;
@@ -196,15 +192,15 @@ void pollStep(int s){
     in_note[s][0] = DEFAULT_OCTAVE;
     in_note[s][1] = DEFAULT_NOTE;
   }
-  Serial.print(" len ");
-  Serial.print(POT_ENABLED[1][s]);
+  //Serial.print(" len ");
+  //Serial.print(POT_ENABLED[1][s]);
   if(POT_ENABLED[1][s]){
     in_length[s] = len_val;
   }else{
     in_length[s] = DEFAULT_LENGTH;  
   }
-  Serial.print(" dur ");
-  Serial.print(POT_ENABLED[2][s]);
+  //Serial.print(" dur ");
+  //Serial.print(POT_ENABLED[2][s]);
   if(POT_ENABLED[2][s]){
     in_duration[s][0] = dur_mode; 
     in_duration[s][1] = dur_val;
@@ -212,16 +208,13 @@ void pollStep(int s){
     in_duration[s][0] = DEFAULT_DUR_MODE;
     in_duration[s][1] = DEFAULT_DURATION;
   }
-  Serial.print(" vel ");
-  Serial.println(POT_ENABLED[3][s]);
+  //Serial.print(" vel ");
+  //Serial.println(POT_ENABLED[3][s]);
   if(POT_ENABLED[3][s]){
     in_velocity[s] = vel_val;  
   }else{
     in_velocity[s] = DEFAULT_VELOCITY;
-  }
-
-
-  
+  }  
 }
 
 
@@ -239,7 +232,18 @@ void pollEncoder(){
 
   static unsigned long lastSwOnTime = 0;
   unsigned long swOnTime;
+
+  //these probably shouldnt go in this function, but this gets polled frequently
+  if(!midiPlaying && digitalRead(extClockTogglePin) == LOW){
+    //switch flipped on detected -- throw a handlestart
+    handleStart();
+  }
+  if(midiPlaying && digitalRead(extClockTogglePin) == HIGH){
+    //switch flipped off detected -- throw a handleStop
+    handleStop();
+  }
   
+
   if  (!digitalRead(rotaryEncoderSwPin)){
     swOnTime = millis();
     if(swOnTime - lastSwOnTime > 750){
@@ -266,8 +270,8 @@ void pollEncoder(){
 }
 
 void menuNavigate(bool submenu, bool increment){  
-  Serial.print(submenu);
-  Serial.println(increment);
+  //Serial.print(submenu);
+  //Serial.println(increment);
 //  memoryLog();
   
   if(!submenu){    
@@ -286,8 +290,8 @@ void menuNavigate(bool submenu, bool increment){
   }
   
   if(submenu){
-    Serial.print("Submenu ");
-    Serial.println(menuIndex);
+    //Serial.print("Submenu ");
+    //Serial.println(menuIndex);
     
     if(menuIndex == MI_SCALE){
         modifyScale(increment);
@@ -850,31 +854,33 @@ void chordOn(int key, int chord[12], int velocity){
       if(chord[i]<0)
         break;
       MIDI.sendNoteOn(key+chord[i], velocity, 1);
+      Serial.print(key+chord[i]);
+      Serial.print("+");
     }
   }
   if(g_playModeIndex == SINGLE){
     if(chord[0]>=0)
       MIDI.sendNoteOn(key+chord[0],velocity,1);
   }
+  Serial.println("");
 }
 
 void chordOff(int key, int chord[12]){
-  
   if(g_playModeIndex == CHORD){
-    for (int i=0; i<12; i++){
-      if(chord[i]<0)
-        break;          
-      MIDI.sendNoteOff(key+chord[i], 0, 1);                                       
+    for (int i=11; i>-1; i--){  //experimenting with decrementing -- last note turned off is doing so at a delay, happens both incrementing and decrementing...
+      if(chord[i]>=0){
+        MIDI.sendNoteOff(key+chord[i], 0, 1);                                       
+      }
     }
   }
   if(g_playModeIndex == SINGLE){
     if(chord[0]>=0)
       MIDI.sendNoteOff(key+chord[0],0,1);
   }
+  Serial.println("");
 }
 
 void stepOn(int root, int scale[12][2], int octaveOffset, int scaleIndex, int velocity){
-  
   if(!noteOn){
     chordOn(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
               chordFromForm(scale[scaleIndex-1][1]),
@@ -932,7 +938,7 @@ void setup(){
 
   //get initial pin states for encoder (first poll often registers a "change" from uninit values, changes menu from desired default)
   pollEncoder(); 
-  menuIndex = MI_DEBUG;
+  menuIndex = MI_INFO;
   
   
   MIDI.begin(MIDI_CHANNEL_OMNI);                      // Launch MIDI and listen to all channels
@@ -1050,6 +1056,7 @@ void handleClock(void){
     //truncate the current played note early (by staccato offset interval)
     if(noteOn && clk>=0 && ((clk+staccInterval)%clkDivider==0)){
       stepOff(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1]);
+     
       writeMuxLED(stepindex,LOW);
     }
   }  
@@ -1060,12 +1067,13 @@ void handleClock(void){
     //and increment counters
     
     if(noteOn){
-      if( 
+      if(     
           (in_duration[stepindex][0]==HOLD && stepLengthIndex == in_length[stepindex]-1)//HOLD && stepindex == max-1
           || (in_duration[stepindex][0]==ONCE && stepLengthIndex == 0) //ONCE && stepindex == 0
           || (in_duration[stepindex][0]==REPEAT) //REPEAT at every step-end (if note is on)
          ){
             stepOff(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1]);
+            
             writeMuxLED(stepindex,LOW);  
         }
     }    
@@ -1109,11 +1117,11 @@ void nextStep(){
     bool fiftyFifty = random(2);
     int oneOfEight = random(8);
 
-    Serial.print("Random test,  coin flip:");
-    Serial.print(fiftyFifty);
-    Serial.print(" 8roll: ");
-    Serial.println(oneOfEight);
-    
+//    Serial.print("Random test,  coin flip:");
+//    Serial.print(fiftyFifty);
+//    Serial.print(" 8roll: ");
+//    Serial.println(oneOfEight);
+   
     if(g_seqOrderIndex == FORWARD){ //simple increment
       nextStepIndex = stepindex+1;
       if(nextStepIndex > stepMax-1)
