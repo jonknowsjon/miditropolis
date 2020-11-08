@@ -1,7 +1,7 @@
 /***************************************************************************************************************************************************
  * MIDIBOX
  * An Arduino-driven midi sequencer, 
- * inspired by the Intellijel Metropolis Eurorack Module, and by transitive property, ryktnk's Roland 100m sequencer
+ * inspired by the Intellijel Metropolis Eurorack Module, and transitively, ryk's Roland 185 sequencer
  * 
  * 
  * 
@@ -14,22 +14,15 @@
  * Coding TODO:  Features still needed:
  * HandleStop
  * Arpeggiation
- * Step Order (Menu item, default forwards... additional: backwards, random, brownian (plinko))   --- RNG NOT WORKING
  * Step hold-- switch,  while note on, sustains current note, while off, does not?  (resume quantized?) 
-  * More Scales / Modes  -- 
- * Info Menu:
- *    Current beats/clock (perhaps show step+stepindex as dashes+numbers ie --5---- would be 5th stepindex of 3rd step
- *    Current Settings/Vals (show current step's Values (for help fine tuning)
- *    
- * 
- * MUX analog inputs not working at all...    
- * 
+ * More Scales / Modes  -- 
+ * PolyMode - Currently Poly is Chord Triad only, different intervals,  thirds, fifths, etc?
+ * Settable MIDI channels (listen, output)
+ * Harmony Midi - for intervals/triads, output on different midi channels for poly using multi instruments?
  * 
  * Needs Testing:
  * Knob values / assignments
  * DebugInfo -- seems to be working
- * Sequence Info -- working, needs cosmetics
- * Random+Brownian Sequences  -- modified seed/pin initialization, may work?
  * Staccato -- seems to be working
  * 
  * *************************************************************************************************************************************************
@@ -86,11 +79,12 @@ bool subMenuSelected = false;
 int g_scaleIndex = MAJ_DIA;
 int g_clockDivIndex = EIGHTH;
 int g_playModeIndex = CHORD;
-int g_clockSrcIndex = CS_EXT;
+int g_clockSrcIndex = CS_INT;
 int g_bpm = 120; //bpm value for internal clock 
 int g_arpTypeIndex = 0; //unimplemented right now...
 int g_infoModeIndex = SEQINFO;
 int g_seqOrderIndex = FORWARD;
+int g_seqOrderPing = 1; //when seqorder is set to ping-pong, this will keep track of whether we're pinging or ponging
 int g_staccato = 0;
 
 //arrays holding step data to be populated from knobs -- initialized with test data
@@ -136,10 +130,12 @@ void writeMuxLED(int muxIndex, bool on){
 }
 
 int readMuxValue(const unsigned inputMuxPins[], const unsigned signalPin, int muxGroup, int muxIndex){  
+  //Serial.println(muxIndex+(8*muxGroup));
+
   //set digital pins to mux selector
   for(int i=0; i<4; i++){
-    digitalWrite(inputMuxPins[i]+(8*muxGroup), //muxGroup 0 or 1, determines whether first or second 8 in 16 channel multiplexer
-    MUX_TRUTH_TABLE[muxIndex][i]);
+    digitalWrite(inputMuxPins[i], //muxGroup 0 or 1, determines whether first or second 8 in 16 channel multiplexer
+    MUX_TRUTH_TABLE[muxIndex+(8*muxGroup)][i]);
   }
   //read signal
   return analogRead(signalPin);
@@ -148,10 +144,9 @@ int readMuxValue(const unsigned inputMuxPins[], const unsigned signalPin, int mu
 void pollStep(int s){
   //poll the knob settings for step s and write them to their corresponding array positions
 
-  //if step to poll >= max, poll 0 instead
-  if(s >= stepMax-1)
-    s = 0;  
-  
+//  Serial.print("Polling step: ");
+//  Serial.println(s);
+ 
   //get positions (0-1023)
   int noteVal = readMuxValue(row12MuxPins, row12SignalPin, 0, s);
   int lengthVal = readMuxValue(row12MuxPins, row12SignalPin, 1, s);
@@ -175,12 +170,12 @@ void pollStep(int s){
 
   //UNCOMMENT THESE WHEN READY TO READ KNOB VALUES  (MUX IS HOOKED UP)
 //  //assign values to memory
-//  in_note[s][0] = note_octave;
-//  in_note[s][1] = note_val;
-//  in_length[s] = map(lengthVal,0,1023,1,8);
-//  in_duration[s][0] = dur_mode; 
-//  in_duration[s][1] = dur_val;
-//  in_velocity[s] = map(velocityVal,0,1023,-50,120);
+  in_note[s][0] = note_octave;
+  in_note[s][1] = note_val;
+  in_length[s] =   //map(lengthVal,0,1023,1,8);
+  in_duration[s][0] = dur_mode; 
+  in_duration[s][1] = dur_val;
+  in_velocity[s] = map(velocityVal,0,1023,-50,120);
 }
 ////////////////////////////END PHYSICAL I / O CODE////////////////////////////////////////////////////////////////////////////////////
 
@@ -467,15 +462,15 @@ void updateDisplay(){
   display.setFont(NULL);
   display.setTextColor(SSD1306_WHITE);
 
- 
-  if(!subMenuSelected)
-    display.print(">");
-  else
-    display.print(" ");  
-    
-  display.println(MENU_TEXT[menuIndex]);
+  if(menuIndex != MI_DEBUG){  
+    if(!subMenuSelected)
+      display.print(">");
+    else
+      display.print(" ");  
+      
+    display.println(MENU_TEXT[menuIndex]);
 
-  if(menuIndex != MI_DEBUG){    
+    
     if(subMenuSelected)
       display.print(">");
     else
@@ -489,6 +484,7 @@ void updateDisplay(){
   }else{
     displayDebug();  
   }
+  displaySubMenuDescription();
   
   display.display();
 }
@@ -510,24 +506,73 @@ void displaySubMenuValue(){
   }
 }
 
+void displaySubMenuDescription(){   
+  //maybe this isnt needed, but if there's space, provide a little text to describe some opaque menu items??
+}
 void displayInfo(){
   display.setTextSize(1);
-  if(g_infoModeIndex == GENERAL){
-    display.println("Howdy Partner");
+  if(g_infoModeIndex == ABOUT){
+                   //123456789012345678901
+    display.println(" >> miditropolis << ");
+    display.println("a complex sequencer");
+    display.println("crapped out by jonno");
+    display.println("      howdy.        ");
   }
-  if(g_infoModeIndex == SEQINFO){    
+  if(g_infoModeIndex == SEQINFO){
+    display.print("  ");
     for(int i=0;i<8;i++){
-      displaySeqInfo1(i);  
+      displaySeqPos(i);
+      display.print(" ");
     }
     display.println("");
+    display.print("  ");    
+    for(int i=0;i<8;i++){
+      displaySeqInfo1(i);  
+      if(i<7)
+        display.print(" ");
+    }
+    display.println("");
+    display.print("  ");
     for(int i=0;i<8;i++){
       displaySeqInfo2(i);
+      if(i<7)
+      display.print(" ");
     }    
   }
   if(g_infoModeIndex == STEPVALUE){
-    display.println("StepHere");
-    //things to display:
-    //current step no, octave, interval, note,  length, duration+mode, velocity    
+    displayStepValue(stepindex);   
+  }
+  if(g_infoModeIndex == STP1){
+    pollStep(0);
+    displayStepValue(0);
+  }
+  if(g_infoModeIndex == STP2){
+    pollStep(1);
+    displayStepValue(1);
+  }
+  if(g_infoModeIndex == STP3){
+    pollStep(2);
+    displayStepValue(2);
+  }
+  if(g_infoModeIndex == STP4){
+    pollStep(3);
+    displayStepValue(3);
+  }
+  if(g_infoModeIndex == STP5){
+    pollStep(4);
+    displayStepValue(4);
+  }
+  if(g_infoModeIndex == STP6){
+    pollStep(5);
+    displayStepValue(5);
+  }
+  if(g_infoModeIndex == STP7){
+    pollStep(6);
+    displayStepValue(6);
+  }
+  if(g_infoModeIndex == STP8){
+    pollStep(7);
+    displayStepValue(7);
   }
 }
 
@@ -544,58 +589,144 @@ void displaySeqInfo2(int s){
     display.print("-");
   }
 }
+void displaySeqPos(int s){
+  if(s == stepindex){
+    display.print("*"); 
+  }else{
+    display.print(" ");
+  }
+}
+void displayStepValue(int s){
+  //things to display:
+  //current step no, octave, interval, note,  length, duration+mode, velocity   
+  
+  //line one: step no
+  display.print("Step: ");
+  display.println(s+1);
 
-void displayDebug(){
-  display.setTextSize(1);
+  //line two,  len, duration, velocity
+  display.print("Len:");
+  display.print(in_length[s]);
+  display.print(" Dur:"); 
+  display.print(DURATION_MODE_TEXT[in_duration[s][0]]); 
+  if(in_duration[s][0]==REPEAT){    
+    display.print("");
+    //when repeating, list the number of times to repeat
+    display.print(in_duration[s][1]/(DURATION_MAX/in_length[s])+1);
+  }
+  display.print(" Vel:");
+  if(in_velocity[s]<0){
+    display.println("SKP");
+  }else{
+    display.println(in_velocity[s]);
+  }
+
+  //line three, octave, interval, note, form
+  display.print("Oct:");
+  display.print(in_note[s][0]);
+  display.print(" Pos:"); 
+  display.print(in_note[s][1]);
+  display.print(" ");
+
+  int note = g_key+ (in_note[s][0]*12) + g_scale[in_note[s][1]-1][0];
+
+  display.print(getNoteLetter(note));    
+  display.print(getNoteOctave(note)); 
+  display.print(" ");
+  display.println(FORM_NAMES[g_scale[in_note[s][1]-1][1]]);
+}
+
+void displayDebug(){  
   if(subMenuSelected){
     //get fresh info
     for(int i=0;i<8;i++){
       pollStep(i);
     }
         
+    display.setTextSize(1);
     display.setFont(&TomThumb);
-
+    display.println("");
+                   //12345678901234567890123456789012
+    display.println("     Displaying Raw Knob Data   ");
+    display.println("          Press to Stop");
+    
     display.print("N");
     for(int i=0;i<8;i++){
       display.print(" ");
-      display.print(raw_note[i],HEX);        
+      padDec(raw_note[i]);      
+      display.print(raw_note[i],DEC);        
     }
+    //display.println("");
     display.println("");
     display.print("L");
 
     for(int i=0;i<8;i++){
       display.print(" ");
-      display.print(raw_length[i],HEX);        
+      padDec(raw_length[i]);  
+      display.print(raw_length[i],DEC);        
     }
+    //display.println("");
     display.println("");  
     display.print("D");
   
     for(int i=0;i<8;i++){
       display.print(" ");
-      display.print(raw_duration[i],HEX);        
+      padDec(raw_duration[i]);  
+      display.print(raw_duration[i],DEC);        
     }
+    //display.println("");
     display.println("");
     display.print("V");    
     for(int i=0;i<8;i++){
       display.print(" ");
-      display.print(raw_velocity[i],HEX);        
+      padDec(raw_velocity[i]);  
+      display.print(raw_velocity[i],DEC);        
     }
     display.println("");
     
   }else{    
-    display.println("Debug Off");
-    display.println("Press to Enable");
+    display.setTextSize(2);
+    display.println("InputTest");
+    display.setTextSize(1);
+    display.println("");
+                   //123456789012345678901
+    display.println("      Debug Off      ");
+    display.println("   Press to Enable   ");
   }
 }
 
-void debugRefresh(){
+void padHex(int val){
+  if(val < 0xFF){
+    display.print("0");
+  }
+  if(val < 0xF){
+    display.print("0");
+  }
+}
+void padDec(int val){
+  if(val < 1000){
+    display.print("0");
+  }
+  if(val < 100){
+    display.print("0");
+  }
+  if(val < 100){
+    display.print("0");
+  }
+}
+
+bool stepInfoSelected(){
+  return (menuIndex == MI_INFO && (g_infoModeIndex >= STP1)); 
+}
+
+void infoRefresh(int n){
   //when called within a loop, will refresh the display every N milliseconds
   //used for debugging/testing components
   
   static unsigned long lastDisplayMillis = 0;    
   unsigned currentMillis = millis();
   
-  if(currentMillis-lastDisplayMillis >= 750){    
+  if(currentMillis-lastDisplayMillis >= n){    
     updateDisplay();
     //mark the time
     lastDisplayMillis = currentMillis;
@@ -728,6 +859,11 @@ void setup(){
   randomSeed(analogRead(randomSeedPin));
   
   setGlobalScale(MAJ_CHORD_PROG);
+
+  //get initial pin states for encoder (first poll often registers a "change" from uninit values, changes menu from desired default)
+  pollEncoder(); 
+  menuIndex = MI_DEBUG;
+  
   
   MIDI.begin(MIDI_CHANNEL_OMNI);                      // Launch MIDI and listen to all channels
   MIDI.setHandleStart(handleStart);
@@ -751,7 +887,7 @@ void loop(){
 
   if(menuIndex == MI_DEBUG && subMenuSelected){
     //menu's set to debug and debugging enabled, call debug display code
-    debugRefresh();
+    infoRefresh(500);
   }else{    
     //we're not debugging, proceed as normal    
     if(digitalRead(extClockTogglePin) == LOW){
@@ -763,6 +899,10 @@ void loop(){
         internalClockTick();
       }
     }
+  }
+  if(stepInfoSelected()){
+    
+    infoRefresh(1000);
   }
 }
 ///////////////////////////END  ARDUINO PROCEDURAL CODE///////////////////////////////////////////////////////////////////////////////
@@ -776,6 +916,7 @@ void handleStart(void){
   noteOn = false; 
   stepindex = 0;
   stepLengthIndex = 0;
+  g_seqOrderPing = 1;
   pollStep(0);
   midiPlaying = true;
 }
@@ -807,7 +948,6 @@ void internalClockTick(){
 }
 
 void handleClock(void){ 
-  
   if(clk>=0 && (clk%clkDivider==0)){
     //clock is on the trigger pulse for a step      
     
@@ -865,29 +1005,29 @@ void handleClock(void){
     //determine if last beat within step
     if(stepLengthIndex > in_length[stepindex]-1){ 
       stepLengthIndex = 0; //if so, reset step length counter    
-      nextStep(); //and move on to the next step
+      nextStep(); //and move on to the next step (as determined by sequence pattern)
     }           
-  }
-
+  }    
+    
   //step may have been freshly incremented above, set to 0 if over max
   if(stepindex>stepMax-1){
     stepindex = 0;
   }  
-  
-  //Tempo/BPM LED logic: clock pulse on quarter notes (regardless of divider setting)
-  if(clk>=0 && (clk%CLK_DIVS[QUARTER]==0)){
-      digitalWrite(clkPin,1);
-  }
-  //LED logic: turn off before next sixteenth
-  if(clk>=0 && ((clk+4)%CLK_DIVS[QUARTER]==0) ){
-    digitalWrite(clkPin,0);
-  }    
-  
   //increment clock, reset when > max
   clk++;
   if(clk>clkMax-1){
     clk = 0;
   }
+
+
+  //Tempo/BPM LED logic: clock pulse on quarter notes (regardless of divider setting)
+  if(clk>=0 && (clk%CLK_DIVS[QUARTER]==0)){
+      digitalWrite(clkPin,1);
+  }
+  //LED logic: turn off one tick shy of a sixteenth (should be a nice blippy blink)
+  if(clk>=0 && ((clk+1)%CLK_DIVS[SIXTEENTH]==0) ){
+    digitalWrite(clkPin,0);
+  }  
 }
 
 void nextStep(){
@@ -895,7 +1035,14 @@ void nextStep(){
 //    Serial.print(clk);
 //    Serial.print(" curr step:");
 //    Serial.print(stepindex);
+    //randomSeed(analogRead(randomSeedPin));
+    bool fiftyFifty = random(2);
+    int oneOfEight = random(8);
 
+    Serial.print("Random test,  coin flip:");
+    Serial.print(fiftyFifty);
+    Serial.print(" 8roll: ");
+    Serial.println(oneOfEight);
     
     if(g_seqOrderIndex == FORWARD){ //simple increment
       nextStepIndex = stepindex+1;
@@ -907,12 +1054,12 @@ void nextStep(){
       if(nextStepIndex < 0)
         nextStepIndex = stepMax-1;
     }
-    if(g_seqOrderIndex == RANDO){  //random
-      nextStepIndex = random(stepMax-1);
+    if(g_seqOrderIndex == RAND){  //random
+      nextStepIndex = oneOfEight;
     }
     if(g_seqOrderIndex == BROWNIAN){ //randomly pick increment or decrement
       
-      if(random(1)){
+      if(fiftyFifty){
         nextStepIndex = stepindex+1;
         if(nextStepIndex > stepMax-1)
           nextStepIndex = 0;  
@@ -921,6 +1068,20 @@ void nextStep(){
           if(nextStepIndex < 0)
             nextStepIndex = stepMax-1;
         }
+    }
+    if(g_seqOrderIndex == PINGPONG){ //back and forth (NEEDS WORK)
+      if(g_seqOrderPing){   
+        nextStepIndex = stepindex+1;
+        if(nextStepIndex > stepMax-1){
+          nextStepIndex = stepindex-1;
+          g_seqOrderPing = 0;    
+        }
+      }else{
+        nextStepIndex = stepindex-1;
+        if(nextStepIndex < 0)
+          nextStepIndex = stepindex+1;
+          g_seqOrderPing = 1;
+      }
     }
 
 //    Serial.print(" sw: ");

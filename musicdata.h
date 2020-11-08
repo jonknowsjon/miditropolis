@@ -2,6 +2,8 @@
 #define _MUSICDATA_H
 
 enum FORMS {MAJ, MIN, DIM, SUS2, SUS4, MAJ3, MIN3, FIFTH, AUGMENTED, ROOTONLY, UNDEF};
+char FORM_NAMES[11][10] = {"Major","Minor", "Dim", "Sus2","Sus4","MajThird","MinThird","Fifth","Aug","Root","X"};
+char FORM_SHORTNAMES[11][5] = {"M","m","°","s2","s4","(M3)","(m3)","(5)","+","","X"};
 
 static int SCALE_UNDEF[12] =       {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
 
