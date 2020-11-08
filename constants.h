@@ -14,16 +14,25 @@ const int noteMax = 115; //one octave down from 127 (actual max)
 const int bpmMin = 40;
 const int bpmMax = 240;
 
+const int offsetMin = -192; //values for clock offset range
+const int offsetMax = 192; //used to mitigate processing delay between external clock and notes output
+const int offsetStep = 1; //amount offset will be incremented by when adjusted... if offset is dialed in, perhaps a coarser grain could be used to syncopate/judder the output
 
-const int MENU_ITEMCOUNT = 8;
-enum MENU_ITEMS_EN {MI_INFO, MI_SCALE, MI_KEY, MI_PLAYMODE, MI_CLOCKDIV, MI_ARPTYPE, MI_CLOCKSRC, MI_BPM};
-char MENU_TEXT[8][10] = {"INFO", "SCALE", "KEY", "NOTE MODE", "CLOCK DIV", "ARP TYPE", "CLOCK SRC", "INT. BPM"};
+const int staccMin = 0;  
+const int staccMax = 47;
 
+
+const int MENU_ITEMCOUNT = 11; //11?
+enum MENU_ITEMS_EN {MI_INFO, MI_SCALE, MI_KEY, MI_PLAYMODE, MI_CLOCKDIV, MI_ARPTYPE, MI_STACC, MI_SEQORDER, MI_CLOCKSRC, MI_BPM, MI_CLKOFFSET, MI_DEBUG};
+char MENU_TEXT[12][10] = {"INFO", "SCALE", "KEY", "NOTE MODE", "CLOCK DIV", "ARP TYPE", "STACCATO", "SEQ ORDER" , "CLOCK SRC", "INT. BPM", "EXTOFFSET", "InputTest"};
+
+int INFO_MODES_ITEMCOUNT = 3;
+enum INFO_MODES_EN {GENERAL, SEQINFO, STEPVALUE};
+char INFO_MODES_TEXT[3][10] = {"Gen. Info","Sequence","StepValues"};
 
 int PLAY_MODES_ITEMCOUNT = 3;
 enum PLAY_MODES {CHORD, SINGLE, ARP};
 char PLAY_MODES_TEXT[3][10] = {"PolyChord", "MonoNote", "MonoArp"};
-
 
 const int CLOCK_DIVS_ITEMCOUNT = 6;
 enum CLOCK_DIV_EN {SIXTEENTH, EIGHTH, QUARTER, HALF, WHOLE, DOUBLEWHOLE};
@@ -42,6 +51,9 @@ const int ARPTYPE_ITEMCOUNT = 4;
 enum ARPTYPE_EN {UP, DOWN, UPDOWN, RANDO};
 char ARPTYPE_TEXT[4][10] = {"UP","DOWN","UP&DOWN","RAND"};
 
-char INFO_TEXT[10] = "Hi There!";
+const int SEQ_ORDERS_ITEMCOUNT = 5;
+enum SEQ_ORDERS_EN {FORWARD,REVERSE, RAND, BROWNIAN, PINGPONG};
+char SEQ_ORDERS_TEXT[5][10] = {"Forward","Reverse", "Random", "Brownian", "PingPong"};
+
 
 #endif //_CONSTANTS_H

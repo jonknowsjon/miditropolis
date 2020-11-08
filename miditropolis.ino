@@ -1,6 +1,37 @@
+/***************************************************************************************************************************************************
+ * 
+ * 
+ * Physical TODO: 
+ * Knob data pins wire
+ * Mux wiring harnesses/termination
+ * Feet -- Adhesive vs screwed from within
+ *  
+ * 
+ * Coding TODO:  Features still needed:
+ * HandleStop
+ * Arpeggiation
+ * Step Order (Menu item, default forwards... additional: backwards, random, brownian (plinko))   --- RNG NOT WORKING
+ * Step hold-- switch,  while note on, sustains current note, while off, does not?  (resume quantized?) 
+ * Staccato (menu item, allows note length to be reduced by X clock cycles for clippier notes?)
+ * Info Menu:
+ *    Current beats/clock (perhaps show step+stepindex as dashes+numbers ie --5---- would be 5th stepindex of 3rd step
+ *    Current Settings/Vals (show current step's Values (for help fine tuning)
+ *    
+ * Custom Splash Screen
+ * 
+ * 
+ * Needs Testing:
+ * Knob values / assignments
+ * Internal Clock ticking
+ * Clock Switch
+ * 
+ * 
+ * *************************************************************************************************************************************************
+ */
+
+
 #include <MemoryFree.h>
 #include <pgmStrToRAM.h>
-
 #include <splash.h>
 #include <MIDI.h>
 #include <SPI.h>
@@ -11,8 +42,7 @@
 #include "musicdata.h"
 #include "pins.h"
 
-//MIDI_CREATE_DEFAULT_INSTANCE();
-MIDI_CREATE_INSTANCE(HardwareSerial, Serial3, MIDI);
+MIDI_CREATE_INSTANCE(HardwareSerial, Serial3, MIDI);  //Serial3 uses pins 14 & 15,  default instance used Serial0, created a conflict with debug logging
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -24,6 +54,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 int clk = 0; //counter for midi clock pulses (24 per quarter note)
 bool noteOn = false; //flag for whether a note is actually playing
 int stepindex = 0; //counter for sequencer steps
+int nextStepIndex = 0; //placeholder for next step in sequence (for non-standard sequence orders)
 int stepLengthIndex = 0; //counter for clock divisions within a seq step (longer notes than others, etc)
 bool midiPlaying = false; //flag for whether DAW is currently playing (start signal sent)
 
@@ -31,7 +62,7 @@ bool midiPlaying = false; //flag for whether DAW is currently playing (start sig
 
 //hacky timing variables -- modify these to tweak the processing lag between clock rcv and note out
 bool hasOffset = true;
-int clkOffset = (24*4); //processing lag... allow a clock run-up to next measure to sync at beginning
+int g_clkOffset = 0;//(24*4); //processing lag... allow a clock run-up to next measure to sync at beginning
 
 
 //display & selection variables
@@ -48,7 +79,7 @@ int clkDivider = 96/8; //  96/n  for nth notes  96*n for superwhole
 int g_key = 60; //root note value -- all other note values are offsets of this -- 60 == Middle C
 
 //menu index variables (what the display is  focussed on, and it's current setting's index (for retrieving display text)
-int menuIndex = MENU_ITEMCOUNT-1;
+int menuIndex = MI_INFO;
 bool subMenuSelected = false;
 int g_scaleIndex = MAJ_DIA;
 int g_clockDivIndex = EIGHTH;
@@ -56,6 +87,10 @@ int g_playModeIndex = CHORD;
 int g_clockSrcIndex = CS_EXT;
 int g_bpm = 120; 
 int g_arpTypeIndex = 0; //unimplemented right now...
+int g_infoModeIndex = SEQINFO;
+int g_seqOrderIndex = FORWARD;
+int g_staccato = 0;
+
 
 
 //arrays holding step data to be populated from knobs -- initialized with test data
@@ -68,7 +103,7 @@ int in_note[8][2] =    {{0, 1},  //octave, position
                         {0, 7},
                         {1, 1}
                        };             
-int in_velocity[8] = {110,90,80,90, -10,50,50,50}; //velocity value == <0 indicates reset steps (needs testing)
+int in_velocity[8] = {110,90,80,90, 90,50,50,50}; //velocity value == <0 indicates reset steps (needs testing)
 int in_length[8] = {4,8,4,8, 1,1,1,1}; // how many clock divs to count for this step	
 int in_duration[8][2] ={{HOLD, 0},    //gatemode, value 0-800ish
 						{REPEAT, 50}, //when gate == ONCE, play for single clockdiv
@@ -80,6 +115,11 @@ int in_duration[8][2] ={{HOLD, 0},    //gatemode, value 0-800ish
 						{HOLD, 0}
 					   };
 
+//raw knob values for debugging / component testing
+int raw_note[8] = {0,0,0,0,0,0,0,0};
+int raw_length[8] = {0,0,0,0,0,0,0,0};
+int raw_duration[8] = {0,0,0,0,0,0,0,0};
+int raw_velocity[8] = {0,0,0,0,0,0,0,0};
 
 
 //////////////////////  I / O ////////////////////////////
@@ -181,35 +221,20 @@ void menuNavigate(bool submenu, bool increment){
     if(menuIndex == MI_KEY){
         modifyKey(increment);
     }
-    
-//    switch(menuIndex){      
-//      case MI_SCALE: 
-//        modifyScale(increment);
-//        break;
-//      case  MI_PLAYMODE: 
-//        modifyPlayMode(increment);
-//        break;
-//      case  MI_CLOCKDIV: 
-//        modifyClockDiv(increment);
-//        break;
-//      case  MI_ARPTYPE: 
-//        modifyArpType(increment);
-//        break;
-//      case  MI_CLOCKSRC:
-//        modifyClockSource(increment);
-//        break;
-//      case  MI_BPM:
-//        modifyBPM(increment);
-//        break;
-//      case MI_KEY: 
-//        modifyKey(increment);
-//        break;
-//    }
+    if(menuIndex == MI_INFO){
+        modifyInfoMode(increment);
+    }
+    if(menuIndex == MI_CLKOFFSET){
+        modifyClockOffset(increment);
+    }
+    if(menuIndex == MI_STACC){
+        modifyStaccato(increment);
+    }
+    if(menuIndex == MI_SEQORDER){
+        modifySeqOrder(increment);
+    }      
   }   
 }
-
-
-
 
 void modifyScale(bool increment){
 	Serial.print("scale ");
@@ -281,6 +306,58 @@ void modifyClockSource(bool increment){
 	}
 }
 
+void modifyInfoMode(bool increment){
+  Serial.print("infomd ");
+  Serial.println(increment);
+  if(increment){
+    g_infoModeIndex++;
+    if(g_infoModeIndex >INFO_MODES_ITEMCOUNT-1)
+      g_infoModeIndex = 0;
+  }else{
+    g_infoModeIndex--;
+    if(g_infoModeIndex < 0)
+      g_infoModeIndex = INFO_MODES_ITEMCOUNT-1;
+  }
+}
+
+void modifySeqOrder(bool increment){
+  Serial.print("seqorder ");
+  Serial.println(increment);
+  if(increment){
+    g_seqOrderIndex++;
+    if(g_seqOrderIndex > SEQ_ORDERS_ITEMCOUNT-1)
+      g_seqOrderIndex = 0;
+  }else{
+    g_seqOrderIndex--;
+    if(g_seqOrderIndex < 0)
+      g_seqOrderIndex = SEQ_ORDERS_ITEMCOUNT-1;
+  }
+}
+
+void modifyClockOffset(bool increment){
+  Serial.print("clkoff ");
+  Serial.println(increment);
+  if(increment){
+    if(g_clkOffset < offsetMax)
+      g_clkOffset += offsetStep;
+  }else{
+    if(g_clkOffset > offsetMin)
+      g_clkOffset -= offsetStep;    
+  }
+}
+
+void modifyStaccato(bool increment){
+  Serial.print("stacc ");
+  Serial.println(increment);
+  if(increment){
+    if(g_staccato < staccMax)
+      g_staccato++;
+  }else{
+    if(g_staccato > staccMin)
+      g_staccato--;
+  }
+}
+
 void modifyBPM(bool increment){
   Serial.print("bpm ");
   Serial.println(increment);
@@ -320,22 +397,48 @@ void updateDisplay(){
 	  display.print(">");
   else
     display.print(" ");
+  
   display.println(MENU_TEXT[menuIndex]);
   
   if(subMenuSelected)
 	  display.print(">");
   else
     display.print(" ");
+  
+  displaySubMenuValue();
+  
+  if(menuIndex == MI_INFO){
+    displayInfo();  
+  }
+  
+  display.display();
+}
+
+void displaySubMenuValue(){
   if(menuIndex == MI_KEY){
-	  display.print(getNoteLetter(g_key));	  
-	  display.println(getNoteOctave(g_key));
-    //display.println(g_key);
+    display.print(getNoteLetter(g_key));    
+    display.println(getNoteOctave(g_key));    
   }else if(menuIndex == MI_BPM){
     display.println(g_bpm);
+  }else if(menuIndex == MI_STACC){
+    display.println(g_staccato);
+  }else if(menuIndex == MI_CLKOFFSET){
+    display.println(g_clkOffset);
   }else{
-	  display.println(getSubMenuText());
+    display.println(getSubMenuText());
   }
-  display.display();
+}
+
+void displayInfo(){
+  if(g_infoModeIndex == GENERAL){
+    display.println("GenHere");
+  }
+  if(g_infoModeIndex == SEQINFO){
+    display.println("SeqHere");
+  }
+  if(g_infoModeIndex == STEPVALUE){
+    display.println("StepHere");
+  }
 }
 
 void memoryLog(){
@@ -364,7 +467,10 @@ char* getSubMenuText(){
         return CLKSRC_TEXT[g_clockSrcIndex];
         break;
       case MI_INFO:
-        return INFO_TEXT;
+        return INFO_MODES_TEXT[g_infoModeIndex];
+       break;
+      case MI_SEQORDER:
+        return SEQ_ORDERS_TEXT[g_seqOrderIndex];
        break;
     }
 }
@@ -393,12 +499,22 @@ void setScaleFromEnum(int scale){
 
 void pollStep(int s){
   //poll the knob settings for step s and write them to their corresponding array positions
+
+  //if step to poll >= max, poll 0 instead
+  if(s >= stepMax-1)
+    s = 0;  
   
   //get positions (0-1023)
   int noteVal = readMuxValue(row12MuxPins, row12SignalPin, 0, s);
   int lengthVal = readMuxValue(row12MuxPins, row12SignalPin, 1, s);
   int durationVal = readMuxValue(row34MuxPins, row34SignalPin, 0, s);
   int velocityVal = readMuxValue(row34MuxPins, row34SignalPin, 1, s);
+
+  //save off raw data for debugging/display
+  raw_note[s] = noteVal;
+  raw_length[s] = lengthVal;
+  raw_duration[s] = durationVal;
+  raw_velocity[s] = velocityVal;
   
   //perform logic based on position divisions
   int note_octave = map(noteVal,0,1023,-1,1);
@@ -407,8 +523,10 @@ void pollStep(int s){
   if(dur_mode >= 2) 
      dur_mode = 2; //Q3 and Q4 = REPEAT = 2;  
   int dur_val =  map(durationVal,0,1023,(0-DURATION_MAX),DURATION_MAX); //first half, value is ignored, so begin iteration at 512=0
-  
-  //assign values to memory 
+
+
+  //UNCOMMENT THESE WHEN READY TO READ KNOB VALUES  (MUX IS HOOKED UP)
+//  //assign values to memory
 //  in_note[s][0] = note_octave;
 //  in_note[s][1] = note_val;
 //  in_length[s] = map(lengthVal,0,1023,1,8);
@@ -418,7 +536,7 @@ void pollStep(int s){
 }
 
 void chordOn(int key, int chord[12], int velocity){
-  //TODO arpeggiation needs total reworking!
+  //TODO arpeggiation probably requires total reworking!
   if(g_playModeIndex == CHORD){
     for (int i=0; i<12; i++){
       if(chord[i]<0)
@@ -478,7 +596,6 @@ void setGlobalScale(int newscale[12][2]){
 void setup(){ 
 
   Serial.begin(9600);
-  
   //initialize LED mux pins
   for(int i=0; i<5;i++){
     pinMode(ledMuxPins[i], OUTPUT);    
@@ -497,6 +614,8 @@ void setup(){
   pinMode(rotaryEncoderPin[1],INPUT);
   pinMode(rotaryEncoderSwPin,INPUT_PULLUP);
   pinMode(extClockTogglePin,INPUT_PULLUP);
+  
+  randomSeed(analogRead(15));
   
   setGlobalScale(MAJ_CHORD_PROG);
   
@@ -519,8 +638,8 @@ void internalClockTick(){
   unsigned currentMillis = millis();    
   
   //determine milli interval between pulses for current bpm  
-  int clkInterval = (g_bpm*(1000/60))/24;  //24 pulses per quarter... 60bpm = 1 beat per 1000ms =  (bpm*(1000/60))/24 = ms-per-clk
-
+  int clkInterval = (60000/g_bpm)/24;  //24 pulses per quarter... 60bpm = 1 beat per 1000ms =  (bpm*(1000/60))/24 = ms-per-clk
+  
   //test to see if that interval has passed
   if(currentMillis-lastPulseMillis >= clkInterval){
     //if so, call handleclock
@@ -534,13 +653,13 @@ void internalClockTick(){
 // the main running loop,  should put as few things here as possible to reduce latency
 void loop(){
   //if toggle switch is on, either listen for midi signals or start internal midi pulsing
-  if(true){//digitalRead(extClockTogglePin) == HIGH){
+  if(digitalRead(extClockTogglePin) == HIGH){
     if(g_clockSrcIndex == CS_EXT){
       MIDI.read();
     }  
-//    if(g_clockSrcIndex == CS_INT){  
-//      internalClockTick();
-//    }
+    if(g_clockSrcIndex == CS_INT){  
+      internalClockTick();
+    }
   }
   
   pollEncoder();
@@ -549,10 +668,11 @@ void loop(){
 void handleStart(void){
   clk = 0;
   if(hasOffset)
-    clk = 0-clkOffset;
+    clk = 0-g_clkOffset;
   noteOn = false; 
   stepindex = 0;
-  stepLengthIndex = 0; 
+  stepLengthIndex = 0;
+  pollStep(0);
   midiPlaying = true;
 }
 
@@ -577,12 +697,12 @@ void handleClock(void){
     
     if( isFirstStep || (isRepeating && isWithinPattern)){
       //play the step
-      stepOn(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1], in_velocity[stepindex]);       
-    }   
-    
-    writeMuxLED(stepindex,HIGH);      
+      stepOn(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1], in_velocity[stepindex]);
+      writeMuxLED(stepindex,HIGH);       
+    }     
   }
-  
+
+
   if(clk>=0 && ((clk+1)%clkDivider==0) ){    
     //clock is on the pulse before next trigger, time to stop notes (when appropriate) 
     //and increment counters
@@ -593,38 +713,34 @@ void handleClock(void){
           || (in_duration[stepindex][0]==ONCE && stepLengthIndex == 0) //ONCE && stepindex == 0
           || (in_duration[stepindex][0]==REPEAT) //REPEAT at every step-end (if note is on)
          ){
-            stepOff(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1]); 
+            stepOff(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1]);
+            writeMuxLED(stepindex,LOW);  
         }
-    } 
+    }    
+       
+    stepLengthIndex++;    
     
-    writeMuxLED(stepindex,LOW);
-    
-    stepLengthIndex++; 
-    if(stepLengthIndex > in_length[stepindex]-1){ //determine if last beat within step
-      stepLengthIndex = 0; //if so, reset step length counter
-      pollStep(stepindex+1); //read next step's data from knobs
-      
-      //test to see if next step's velocity < 0 (flag for stop seq);
-      if((stepindex < stepMax-1) && (in_velocity[stepindex+1] < 0)){
-        stepindex = 0;
-      }else{
-        stepindex++;
-      }
-    }         
+    //determine if last beat within step
+    if(stepLengthIndex > in_length[stepindex]-1){ 
+      stepLengthIndex = 0; //if so, reset step length counter    
+      nextStep(); //and move on to the next step
+    }           
   }
 
   //step may have been freshly incremented above, set to 0 if over max
   if(stepindex>stepMax-1){
     stepindex = 0;
   }
+
+
   
-  //LED logic: clock pulse on quarter notes (regardless of divider setting)
+  //Tempo/BPM LED logic: clock pulse on quarter notes (regardless of divider setting)
   if(clk>=0 && (clk%CLK_DIVS[QUARTER]==0)){
-      digitalWrite(clkPin,HIGH);
+      digitalWrite(clkPin,1);
   }
   //LED logic: turn off before next sixteenth
-  if(clk>=0 && ((clk+1)%CLK_DIVS[SIXTEENTH]==0) ){
-    digitalWrite(clkPin,LOW);
+  if(clk>=0 && ((clk+4)%CLK_DIVS[QUARTER]==0) ){
+    digitalWrite(clkPin,0);
   }    
   
   //increment clock, reset when > max
@@ -632,4 +748,52 @@ void handleClock(void){
   if(clk>clkMax-1){
     clk = 0;
   }
+}
+
+void nextStep(){
+//    //determine which step is next, poll it, increment
+//    Serial.print(clk);
+//    Serial.print(" curr step:");
+//    Serial.print(stepindex);
+
+    
+    if(g_seqOrderIndex == FORWARD){ //simple increment
+      nextStepIndex = stepindex+1;
+      if(nextStepIndex > stepMax-1)
+        nextStepIndex = 0;    
+    }
+    if(g_seqOrderIndex == REVERSE){  //simple decrement
+      nextStepIndex = stepindex-1;
+      if(nextStepIndex < 0)
+        nextStepIndex = stepMax-1;
+    }
+    if(g_seqOrderIndex == RANDO){  //random
+      nextStepIndex = random(stepMax-1);
+    }
+    if(g_seqOrderIndex == BROWNIAN){ //randomly pick increment or decrement
+      bool inc = random(1);
+      if(inc){
+        nextStepIndex = stepindex+1;
+        if(nextStepIndex > stepMax-1)
+          nextStepIndex = 0;  
+        }else{
+          nextStepIndex = stepindex-1;
+          if(nextStepIndex < 0)
+            nextStepIndex = stepMax-1;
+        }
+    }
+
+//    Serial.print(" sw: ");
+//    Serial.print(digitalRead(extClockTogglePin));
+//    Serial.print(" next step:");
+//    Serial.println(nextStepIndex);
+    
+    pollStep(nextStepIndex); //read next step's data from knobs
+    
+    //test to see if next step's velocity < 0 (flag for stop seq);
+    if((stepindex < stepMax-1) && (in_velocity[nextStepIndex] < 0)){
+        nextStepIndex = 0;
+        pollStep(0); 
+    }    
+    stepindex = nextStepIndex;    
 }
