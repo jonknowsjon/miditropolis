@@ -7,7 +7,7 @@
  * 
  * Physical TODO: 
  * Knob data pins wire
- * Mux wiring harnesses/termination -- skipping for how
+ * Mux wiring harnesses/termination -- skipping for now
  * Feet -- Adhesive vs screwed from within
  *  
  * 
@@ -29,9 +29,9 @@
  */
 
 
-#include <MemoryFree.h>
-#include <pgmStrToRAM.h>
-#include <splash.h>
+//#include <MemoryFree.h>
+//#include <pgmStrToRAM.h>
+#include "splash.h"
 #include <MIDI.h>
 #include <SPI.h>
 #include <Wire.h>
@@ -160,22 +160,35 @@ void pollStep(int s){
   raw_velocity[s] = velocityVal;
   
   //perform logic based on position divisions
-  int note_octave = map(noteVal,0,1023,-1,1);
+  int note_octave = map(noteVal,0,1023,-1,2);
   int note_val =  map(noteVal,0,1023,0,36)%12;
-  int dur_mode =  map(durationVal,0,1023,0,3); //split into 2 quarters + half : HOLD, ONCE, REPEAT*2 
+  int dur_mode =  map(durationVal,0,1023,0,4); //split into 2 quarters + half : HOLD, ONCE, REPEAT*2 
   if(dur_mode >= 2) 
      dur_mode = 2; //Q3 and Q4 = REPEAT = 2;  
   int dur_val =  map(durationVal,0,1023,(0-DURATION_MAX),DURATION_MAX); //first half, value is ignored, so begin iteration at 512=0
 
+  //these mappings when using proper maxes barely reach their upper bound as far as a useable setting (i.e. of 0-1023 :: 1-8, only 1023 :: 8);
+  //so going to use slightly larger maxes and round down when necessary below
+  int len_val = map(lengthVal,0,1023,1,9);
+  if(len_val > 8){
+    len_val = 8;
+  }
+  int vel_val = map(velocityVal,0,1023,-50,121);
+  if(vel_val > 120){
+    vel_val = 120;
+  }
+  //provide a slightly larger "dead spot" for 0 velocity but not in the skip range 
+  if(vel_val > -12 && vel_val < 0){
+    vel_val = 0;
+  }  
 
-  //UNCOMMENT THESE WHEN READY TO READ KNOB VALUES  (MUX IS HOOKED UP)
-//  //assign values to memory
+  //assign values to memory
   in_note[s][0] = note_octave;
   in_note[s][1] = note_val;
-  in_length[s] =   //map(lengthVal,0,1023,1,8);
+  in_length[s] = len_val;
   in_duration[s][0] = dur_mode; 
   in_duration[s][1] = dur_val;
-  in_velocity[s] = map(velocityVal,0,1023,-50,120);
+  in_velocity[s] = vel_val;
 }
 ////////////////////////////END PHYSICAL I / O CODE////////////////////////////////////////////////////////////////////////////////////
 
@@ -219,7 +232,7 @@ void pollEncoder(){
 void menuNavigate(bool submenu, bool increment){  
   Serial.print(submenu);
   Serial.println(increment);
-  memoryLog();
+//  memoryLog();
   
   if(!submenu){    
     //navigate in submenu
@@ -733,13 +746,13 @@ void infoRefresh(int n){
   }
 }
 
-void memoryLog(){
-        Serial.print(millis());
-        Serial.print(" ");
-        Serial.print(menuIndex);
-        Serial.print(" ");
-        Serial.println(freeMemory());
-}
+//void memoryLog(){
+//        Serial.print(millis());
+//        Serial.print(" ");
+//        Serial.print(menuIndex);
+//        Serial.print(" ");
+//        Serial.println(freeMemory());
+//}
 
 char* getSubMenuText(){
   switch(menuIndex){
@@ -875,7 +888,7 @@ void setup(){
   // Show initial display buffer contents on the screen --
   // the library initializes this with an Adafruit splash screen.
   display.display();
-  delay(2000);
+  delay(5000);
   updateDisplay();  
 }
 
