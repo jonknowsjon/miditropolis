@@ -67,25 +67,7 @@ static int MIN_CHORD_PROG[12][2] = {      {0,MIN},
 
 const int SCALE_ITEMCOUNT = 3;
 enum SCALE_EN{MAJ_DIA, MIN_DIA, CHROMA};
-const char SCALE_TEXT[3][9] = {"MajDiatnc","MinDiatnc","Chromatic"};
-
-int ** scaleFromEnum(int scale){
-	switch(scale){
-		case MAJ_DIA:
-			return MAJ_CHORD_PROG;
-			break;
-		case MIN_DIA:
-			return MIN_CHORD_PROG;
-			break;
-		case CHROMA:
-			return CHROMATIC_PROG;
-			break;
-		default:
-			return MAJ_CHORD_PROG;
-			break;
-	}
-	
-}
+char SCALE_TEXT[3][10] = {"MajDiatnc","MinDiatnc","Chromatic"};
 
 int * chordFromForm(int form){
     switch(form){

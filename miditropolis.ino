@@ -38,6 +38,7 @@ bool encoderSwVal; //value for rotary enc's switch
 
 //global settings
 int g_scale[12][2] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //placeholder for the scale of notes to be worked within
+int g_scale_max = 12;
 
 int clkDivider = 96/16; //  96/n  for nth notes  96*n for superwhole
 int g_root = 60; //root note value -- all other note values are offsets of this -- 60 == Middle C
@@ -49,6 +50,7 @@ int g_scaleIndex = MAJ_DIA;
 int g_clockDivIndex = SIXTEENTH;
 int g_playModeIndex = CHORD;
 int g_clockSrcIndex = CS_EXT;
+int g_bpm = 120; 
 int g_arpTypeIndex = 0; //unimplemented right now...
 
 
@@ -100,20 +102,29 @@ int readMuxValue(const unsigned inputMuxPins[], const unsigned signalPin, int mu
 void pollEncoder(){
   //debouncing variables
   static unsigned long lastChangeTime = 0;  
-  unsigned long changeTime;  
-  
-    encoderSwVal = digitalRead(rotaryEncoderSwPin);  
+  unsigned long changeTime;
+
+  static unsigned long lastSwOnTime = 0;
+  unsigned long swOnTime;
+  if  (digitalRead(rotaryEncoderSwPin)){
+    swOnTime = millis();
+    if(swOnTime - lastSwOnTime > 750){
+        //button pressed, and its the first time its been pressed in little while
+        subMenuSelected = !subMenuSelected; //toggle menu/submenu selection
+        lastSwOnTime = swOnTime;
+    }
+  }
+    
     encoderVal = digitalRead(rotaryEncoderPin[0]);
     if(encoderVal != encoderPrevVal){
       changeTime = millis();
       if(changeTime - lastChangeTime > 150){ //if last change was less than X ms ago, ignore it... (debouncing)          
-        menuNavigate(!digitalRead(rotaryEncoderSwPin),(encoderVal != digitalRead(rotaryEncoderPin[1])));        
+        menuNavigate(subMenuSelected,(encoderVal != digitalRead(rotaryEncoderPin[1])));        
         updateDisplay();
         lastChangeTime = changeTime;
       }
     }
-    encoderPrevVal = encoderVal;    
-  
+    encoderPrevVal = encoderVal;   
 }
 
 void menuNavigate(bool submenu, bool increment){
@@ -152,9 +163,13 @@ void menuNavigate(bool submenu, bool increment){
       case  MI_CLOCKSRC:
         modifyClockSource(increment);
         break;
+      case  MI_BPM:
+        modifyBPM(increment);
+        break;
     }
-  }  
+  }   
 }
+
 
 void modifyKey(bool increment){
 		
@@ -163,7 +178,7 @@ void modifyKey(bool increment){
 			g_root++;		
 	}else{
 		if( g_root > noteMin)
-			g+root--;
+			g_root--;
 	};
 }
 void modifyScale(bool increment){
@@ -176,6 +191,7 @@ void modifyScale(bool increment){
 		if(g_scaleIndex < 0)
 			g_scaleIndex = SCALE_ITEMCOUNT-1;
 	}
+  setScaleFromEnum(g_scaleIndex);
 }
 void modifyPlayMode(bool increment){
 	if(increment){
@@ -216,8 +232,17 @@ void modifyClockSource(bool increment){
 	}else{
 		g_clockSrcIndex--;
 		if(g_clockSrcIndex < 0)
-			g_clockSrcIndex = CLOCKSRC_ITEMCOUNT-1;
+			g_clockSrcIndex = CLKSRC_ITEMCOUNT-1;
 	}
+}
+void modifyBPM(bool increment){
+  if(increment){
+    if(g_bpm < bpmMax)
+      g_bpm++;
+  }else{
+    if(g_bpm > 0)
+      g_bpm--;
+  }
 }
 
 void updateDisplay(){
@@ -235,6 +260,8 @@ void updateDisplay(){
   if(menuIndex == MI_KEY){
 	  display.print(getNoteLetter(g_root));
 	  display.println(getNoteOctave(g_root));
+  }else if(menuIndex == MI_BPM){
+    display.println(g_bpm);
   }else{
 	display.println(getSubMenuText());
   }
@@ -261,6 +288,28 @@ char* getSubMenuText(){
     }
 }
 
+void setScaleFromEnum(int scale){
+  switch(scale){
+    case MAJ_DIA:
+      setGlobalScale(MAJ_CHORD_PROG);
+      break;
+    case MIN_DIA:
+      setGlobalScale(MIN_CHORD_PROG);
+      break;
+    case CHROMA:
+      setGlobalScale(CHROMATIC_PROG);
+      break;
+    default:
+      setGlobalScale(CHROMATIC_PROG);
+      break;
+  }  
+}
+
+/////////////END MENU & VALUE ASSIGNMENT CODE//////////////////////
+
+
+
+
 void pollStep(int s){
   //poll the knob settings for step s and write them to their corresponding array positions
   
@@ -270,33 +319,50 @@ void pollStep(int s){
   int durationVal = readMuxValue(row34MuxPins, row34SignalPin, 0, s);
   int velocityVal = readMuxValue(row34MuxPins, row34SignalPin, 1, s);
   
-  //perform logic based on position divisions?
-  
+  //perform logic based on position divisions
+  int note_octave = map(noteVal,0,1023,-1,1);
+  int note_val =  map(noteVal,0,1023,0,36)%12;
+  int dur_mode =  map(durationVal,0,1023,0,3); //split into 2 quarters + half : HOLD, ONCE, REPEAT*2 
+  if(dur_mode >= 2) 
+     dur_mode = 2; //Q3 and Q4 = REPEAT = 2;  
+  int dur_val =  map(durationVal,0,1023,(0-DURATION_MAX),DURATION_MAX); //first half, value is ignored, so begin iteration at 512=0
   
   //assign values to memory 
+  in_note[s][0] = note_octave;
+  in_note[s][1] = note_val;
+  in_length[s] = map(lengthVal,0,1023,1,8);
+  in_duration[s][0] = dur_mode; 
+  in_duration[s][1] = dur_val;
+  in_velocity[s] = map(velocityVal,0,1023,-50,120);
 }
 
 void chordOn(int key, int chord[12], int velocity){
-        for (int i=0; i<12; i++){
-          if(chord[i]<0)
-            break;
-           
-
-          MIDI.sendNoteOn(key+chord[i], velocity, 1);
-          digitalWrite(clkPin, HIGH);
-          
-        }
+  //TODO arpeggiation needs total reworking!
+  if(g_playModeIndex == CHORD){
+    for (int i=0; i<12; i++){
+      if(chord[i]<0)
+        break;
+      MIDI.sendNoteOn(key+chord[i], velocity, 1);
+    }
+  }
+  if(g_playModeIndex == SINGLE){
+    if(chord[0]>=0)
+      MIDI.sendNoteOn(key+chord[0],velocity,1);
+  }
 }
 
 void chordOff(int key, int chord[12]){
-  
-        for (int i=0; i<12; i++){
-          if(chord[i]<0)
-            break;
-          
-          MIDI.sendNoteOff(key+chord[i], 0, 1);
-          digitalWrite(clkPin,LOW);                                   
-        }
+  if(g_playModeIndex == CHORD){
+    for (int i=0; i<12; i++){
+      if(chord[i]<0)
+        break;          
+      MIDI.sendNoteOff(key+chord[i], 0, 1);                                       
+    }
+  }
+  if(g_playModeIndex == SINGLE){
+    if(chord[0]>=0)
+      MIDI.sendNoteOff(key+chord[0],0,1);
+  }
 }
 
 void stepOn(int root, int scale[12][2], int octaveOffset, int scaleIndex, int velocity){
@@ -315,10 +381,15 @@ void stepOff(int root, int scale[12][2], int octaveOffset, int scaleIndex){
     noteOn = false;
 }
 
+
 void setGlobalScale(int newscale[12][2]){
   for (int i=0; i<12; i++){
+
     g_scale[i][0] = newscale[i][0];
-    g_scale[i][1] = newscale[i][1];  
+    g_scale[i][1] = newscale[i][1]; 
+    
+    if(g_scale[i][1] != UNDEF) //determine highest index with definition (used for segmenting note knob)
+      g_scale_max = i;
   }  
 }
 
@@ -328,9 +399,14 @@ void setup(){
   for(int i=0; i<5;i++){
     pinMode(ledMuxPins[i], OUTPUT);    
   }
-  //TODO initialize knob input mux pins
-
   
+  //initialize knob input mux pins
+  for(int i=0; i<4;i++){
+    pinMode(row12MuxPins[i],OUTPUT);
+    pinMode(row34MuxPins[i],OUTPUT);
+  }
+  pinMode(row12SignalPin, INPUT);
+  pinMode(row34SignalPin, INPUT);  
   
   pinMode(clkPin, OUTPUT);
   pinMode(rotaryEncoderPin[0],INPUT);
@@ -350,14 +426,37 @@ void setup(){
   // the library initializes this with an Adafruit splash screen.
   display.display();
   delay(2000);
-  updateDisplay();
-
-  
+  updateDisplay();  
 }
 
-void loop(){
-  MIDI.read();  
+void internalClockTick(){
+  static unsigned long lastPulseMillis = 0;    
+  unsigned currentMillis = millis();    
+  
+  //determine milli interval between pulses for current bpm  
+  int clkInterval = (g_bpm*(1000/60))/24;  //24 pulses per quarter... 60bpm = 1 beat per 1000ms =  (bpm*(1000/60))/24 = ms-per-clk
+  
+  //see if internal clock toggle is switched on
+  if(digitalRead(extClockTogglePin)){
+    //test to see if that interval has passed
+    if(currentMillis-lastPulseMillis >= clkInterval){
+      //if so, call handleclock
+      handleClock();
+      //mark pulse time
+      lastPulseMillis = currentMillis;
+    }
+  }
+}
 
+// the main running loop,  should put as few things here as possible to reduce latency
+void loop(){
+ 
+  if(g_clockSrcIndex == CS_EXT)
+    MIDI.read();
+  
+  if(g_clockSrcIndex == CS_INT)  
+    internalClockTick();
+    
   pollEncoder();
 }
 
@@ -431,9 +530,8 @@ void handleClock(void){
   //step may have been freshly incremented above, set to 0 if over max
   if(stepindex>stepMax-1){
     stepindex = 0;
-  }      
+  }
   
-
   //LED logic: clock pulse on quarter notes (regardless of divider setting)
   if(clk>=0 && (clk%CLK_DIVS[QUARTER]==0)){
       digitalWrite(clkPin,HIGH);
@@ -441,8 +539,7 @@ void handleClock(void){
   //LED logic: turn off before next sixteenth
   if(clk>=0 && ((clk+1)%CLK_DIVS[SIXTEENTH]==0) ){
     digitalWrite(clkPin,LOW);
-  }  
-  
+  }    
 
   //increment clock, reset when > max
   clk++;
