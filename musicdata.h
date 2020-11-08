@@ -30,6 +30,22 @@ static int ROOT_ONLY[12] = { 0,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
  * Pentatonic and these below
  * https://en.wikipedia.org/wiki/Mode_(music)#Modern_modes
 */
+/*
+
+A B C D E F G A B C D E F G
+	0 1 2 3 4 5 6 7
+A # B C # D # E F # G # A # B C # D # E F # G
+	  0 1 2 3 4 5 6 7 8 9101112
+
+Ionian	CDEFGABC   0 2 4 5 7 9 11 
+Dorian  DEFGABCD   2 4 5 7 9 11 0
+Phyrgian EFGABCDE  4 5 7 9 11 0 2
+Lydian FGABCDEF	   5 7 9 11 0 2 4
+Mixolydian GABCDEFG7 9 11 0 2 4 5
+Aeolian ABCDEFGA   9 11 0 2 4 5 7
+Locrian BCDEFGAB  11  0	2 4 5 7 9
+ */
+
 static int CHROMATIC_PROG[12][2] = {      {0,ROOTONLY},
                                           {1,ROOTONLY},
                                           {2,ROOTONLY},
@@ -70,10 +86,94 @@ static int MIN_CHORD_PROG[12][2] = {      {0,MIN},
                                           {-1,UNDEF},
                                           {-1,UNDEF}};
 
-
-const int SCALE_ITEMCOUNT = 3;
-enum SCALE_EN{MAJ_DIA, MIN_DIA, CHROMA};
-char SCALE_TEXT[3][10] = {"MajDiatnc","MinDiatnc","Chromatic"};
+static int IONIAN_MODE_PROG[12][2] = {    {0,MAJ},
+                                          {2,MIN},
+                                          {4,MIN},
+                                          {5,MAJ},
+                                          {7,MAJ},
+                                          {9,MIN},
+                                          {11,DIM},  
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF}};
+static int DORIAN_MODE_PROG[12][2] = {    {2,MIN},
+                                          {4,MIN},
+                                          {5,MAJ},
+                                          {7,MAJ},
+                                          {9,MIN},
+                                          {11,DIM},
+                                          {0,MAJ},  
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF}};
+static int PHRYGIAN_MODE_PROG[12][2] = {  {4,MIN},
+                                          {5,MAJ},
+                                          {7,MAJ},
+                                          {9,MIN},
+                                          {11,DIM},
+                                          {0,MAJ},
+                                          {2,MIN},  
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF}};
+static int LYDIAN_MODE_PROG[12][2] = {    {5,MAJ},
+                                          {7,MAJ},
+                                          {9,MIN},
+                                          {11,DIM},
+                                          {0,MAJ},
+                                          {2,MIN},
+                                          {4,MIN},  
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF}};
+static int MIXOLYDIAN_MODE_PROG[12][2] ={ {7,MAJ},
+                                          {9,MIN},
+                                          {11,DIM},
+                                          {0,MAJ},
+                                          {2,MIN},
+                                          {4,MIN},
+                                          {5,MAJ},  
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF}};
+static int AEOLIAN_MODE_PROG[12][2] = {   {9,MIN},
+                                          {11,DIM},
+                                          {0,MAJ},
+                                          {2,MIN},
+                                          {4,MIN},
+                                          {5,MAJ},
+                                          {7,MAJ},  
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF}};
+static int LOCRIAN_MODE_PROG[12][2] = {   {11,DIM},
+                                          {0, MAJ},
+                                          {2,MIN},
+                                          {4,MIN},
+                                          {5,MAJ},
+                                          {7,MAJ},
+                                          {9,MIN},  
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF},
+                                          {-1,UNDEF}};										  
+										  
+const int SCALE_ITEMCOUNT = 10;
+enum SCALE_EN{MAJ_DIA, MIN_DIA, CHROMA,ION,DOR,PHRY,LYD,MIXO,AEOL,LOCR};
+char SCALE_TEXT[10][10] = {"MajDiatnc","MinDiatnc","Chromatic","Ionian","Dorian","Phrygian","Lydian","Mixolydn","Aeolian","Locrian",};
 
 int * chordFromForm(int form){
     switch(form){

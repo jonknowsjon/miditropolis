@@ -1,4 +1,4 @@
-/***************************************************************************************************************************************************
+/************************file:///C:/Users/jfran/Documents/Arduino/MIDIBOX/constants.h***************************************************************************************************************************
  * MIDIBOX
  * An Arduino-driven midi sequencer, 
  * inspired by the Intellijel Metropolis Eurorack Module, and transitively, ryk's Roland 185 sequencer
@@ -457,6 +457,27 @@ void setScaleFromEnum(int scale){
     case CHROMA:
       setGlobalScale(CHROMATIC_PROG);
       break;
+	case ION:
+	  setGlobalScale(IONIAN_MODE_PROG);
+	  break;
+	case DOR:
+	  setGlobalScale(DORIAN_MODE_PROG);
+	  break;
+	case PHRY:
+	  setGlobalScale(PHRYGIAN_MODE_PROG);
+	  break;
+	case LYD:
+	  setGlobalScale(LYDIAN_MODE_PROG);
+	  break;
+	case MIXO:
+	  setGlobalScale(MIXOLYDIAN_MODE_PROG);
+	  break;
+	case AEOL:
+	  setGlobalScale(AEOLIAN_MODE_PROG);
+	  break;
+	case LOCR:
+	  setGlobalScale(LOCRIAN_MODE_PROG);
+	  break;
     default:
       setGlobalScale(CHROMATIC_PROG);
       break;
