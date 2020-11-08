@@ -5,8 +5,6 @@
  * 
  * 
  * 
- * Physical TODO: 
- * Feet -- Adhesive vs screwed from within
  *  
  * 
  * Coding TODO:  Features still needed:
@@ -19,7 +17,12 @@
  * Harmony Midi - for intervals/triads, output on different midi channels for poly using multi instruments?
  * 
  * Needs Testing:
- * PingPong Sequence Order
+ * 
+ * 
+ * Bugs:
+ * Staccato overrides sustained note mode
+ * Clock toggle on crams notes together?   (Flushing MIDI.read() seems to have helped)
+ * Cycling through menu messes up notes
  * 
  * *************************************************************************************************************************************************
  */
@@ -59,6 +62,8 @@ int stepindex = 0; //counter for sequencer steps
 int nextStepIndex = 0; //placeholder for next step in sequence (for non-standard sequence orders)
 int stepLengthIndex = 0; //counter for clock divisions within a seq step (longer notes than others, etc)
 bool midiPlaying = false; //flag for whether DAW is currently playing (start signal sent)
+bool flushingReads = false; //flag for whether MIDI read is being flushed
+bool prevToggleVal = false;
 
 //display & selection variables
 int encoderVal, encoderPrevVal; //current + previous values for rotary encoder
@@ -850,12 +855,13 @@ char* getSubMenuText(){
 void chordOn(int key, int chord[12], int velocity){
   //TODO arpeggiation probably requires total reworking!
   if(g_playModeIndex == CHORD){
+    Serial.print("playing notes: ");
     for (int i=0; i<12; i++){
       if(chord[i]<0)
         break;
       MIDI.sendNoteOn(key+chord[i], velocity, 1);
       Serial.print(key+chord[i]);
-      Serial.print("+");
+      Serial.print(" ");
     }
   }
   if(g_playModeIndex == SINGLE){
@@ -967,12 +973,33 @@ void loop(){
   }else{    
     //we're not debugging, proceed as normal    
     if(digitalRead(extClockTogglePin) == LOW){
+            
       //if toggle switch is on, either listen for midi signals or start internal midi pulsing
       if(g_clockSrcIndex == CS_EXT){
+        //Serial.print("r");
+        if(prevToggleVal == false){
+          //first cycle this switch is on... let's flush the midi read of any transient events...)          
+          flushingReads = true;
+          Serial.println("flushing");
+          for(int i=0;i<128;i++){
+            //calling read with flushing toggled on, any clock events called should be harmless?
+            MIDI.read();
+          }
+          flushingReads = false;
+          prevToggleVal = true;
+        }
+        
         MIDI.read();
+         
       }  
-      if(g_clockSrcIndex == CS_INT){  
-        internalClockTick();
+      if(g_clockSrcIndex == CS_INT){internalClockTick();
+      }
+    }else{
+      //toggle switch is off... do anything while idle?
+      //maybe repoll steps?
+      if(prevToggleVal == true){
+        Serial.println("Toggled off");
+        prevToggleVal = false;
       }
     }
   }
@@ -988,6 +1015,7 @@ void loop(){
  *                         BEGIN  MIDI EVENT HANDLING CODE
  ************************************************************************************************************************************/
 void handleStart(void){
+  Serial.println("==================handleStart=====================");
   clk = 0-g_clkOffset;
   noteOn = false; 
   stepindex = 0;
@@ -998,6 +1026,7 @@ void handleStart(void){
 }
 
 void handleStop(void){
+  Serial.println("==================handleStop=======================");
   //TODO write handleStop -- when DAW sends stop... housekeeping stuff like turn off LEDs, reset clocks to 0?
 
   panic();
@@ -1024,88 +1053,95 @@ void internalClockTick(){
 }
 
 void handleClock(void){ 
-  if(clk>=0 && (clk%clkDivider==0)){
-    //clock is on the trigger pulse for a step      
+  //When flag for midi call buffer flush is true, ignore all calls until flushing is over
+  if(flushingReads == false){
+    Serial.print(clk);
+    Serial.print("|");
     
-    updateDisplay(); 
-    //at the first step (for all modes)
-    bool isFirstStep = (stepLengthIndex == 0);
-    //determine if mode is set to repeating
-    bool isRepeating = (in_duration[stepindex][0]==REPEAT);
-    //determine if step is within repeating mode's pattern length value
-    bool isWithinPattern = (stepLengthIndex > 0 && stepLengthIndex < in_duration[stepindex][1]/(DURATION_MAX/in_length[stepindex])+1);
-    
-    
-    if( isFirstStep || (isRepeating && isWithinPattern)){
-      //play the step
-      stepOn(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1], in_velocity[stepindex]);
-      writeMuxLED(stepindex,HIGH);   
-         
-    }     
-  }
-
+    if(clk>=0 && (clk%clkDivider==0)){
+      //clock is on the trigger pulse for a step      
+      Serial.println("trig pulse");
+        
+      updateDisplay(); 
+      //at the first step (for all modes)
+      bool isFirstStep = (stepLengthIndex == 0);
+      //determine if mode is set to repeating
+      bool isRepeating = (in_duration[stepindex][0]==REPEAT);
+      //determine if step is within repeating mode's pattern length value
+      bool isWithinPattern = (stepLengthIndex > 0 && stepLengthIndex < in_duration[stepindex][1]/(DURATION_MAX/in_length[stepindex])+1);
+      
+      
+      if( isFirstStep || (isRepeating && isWithinPattern)){
+        //play the step
+        stepOn(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1], in_velocity[stepindex]);
+        writeMuxLED(stepindex,HIGH);   
+           
+      }     
+    }
   
-  if(g_staccato > 0){
-    //for when staccato is being used
-    //determine staccato interval (distance between current clock and next clock division)
-    int staccInterval = g_staccato+1;
-    if(staccInterval >= clkDivider){
-      //ensure interval never exceeds divider -1 (allows a note 1 clock pulse long, anything shorter is impossible)
-      staccInterval = clkDivider-1;
-    }
-    //truncate the current played note early (by staccato offset interval)
-    if(noteOn && clk>=0 && ((clk+staccInterval)%clkDivider==0)){
-      stepOff(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1]);
-     
-      writeMuxLED(stepindex,LOW);
-    }
-  }  
-
-
-  if(clk>=0 && ((clk+1)%clkDivider==0) ){    
-    //clock is on the pulse before next trigger, time to stop notes (when appropriate) 
-    //and increment counters
     
-    if(noteOn){
-      if(     
-          (in_duration[stepindex][0]==HOLD && stepLengthIndex == in_length[stepindex]-1)//HOLD && stepindex == max-1
-          || (in_duration[stepindex][0]==ONCE && stepLengthIndex == 0) //ONCE && stepindex == 0
-          || (in_duration[stepindex][0]==REPEAT) //REPEAT at every step-end (if note is on)
-         ){
-            stepOff(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1]);
-            
-            writeMuxLED(stepindex,LOW);  
-        }
+    if(g_staccato > 0){
+      //for when staccato is being used
+      //determine staccato interval (distance between current clock and next clock division)
+      int staccInterval = g_staccato+1;
+      if(staccInterval >= clkDivider){
+        //ensure interval never exceeds divider -1 (allows a note 1 clock pulse long, anything shorter is impossible)
+        staccInterval = clkDivider-1;
+      }
+      //truncate the current played note early (by staccato offset interval)
+      if(noteOn && clk>=0 && ((clk+staccInterval)%clkDivider==0)){
+        stepOff(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1]);
+       
+        writeMuxLED(stepindex,LOW);
+      }
+    }  
+  
+  
+    if(clk>=0 && ((clk+1)%clkDivider==0) ){    
+      //clock is on the pulse before next trigger, time to stop notes (when appropriate) 
+      //and increment counters
+      
+      if(noteOn){
+        if(     
+            (in_duration[stepindex][0]==HOLD && stepLengthIndex == in_length[stepindex]-1)//HOLD && stepindex == max-1
+            || (in_duration[stepindex][0]==ONCE && stepLengthIndex == 0) //ONCE && stepindex == 0
+            || (in_duration[stepindex][0]==REPEAT) //REPEAT at every step-end (if note is on)
+           ){
+              stepOff(g_key, g_scale, in_note[stepindex][0], in_note[stepindex][1]);
+              
+              writeMuxLED(stepindex,LOW);  
+          }
+      }    
+      
+      stepLengthIndex++;    
+      
+      //determine if last beat within step
+      if(stepLengthIndex > in_length[stepindex]-1){ 
+        stepLengthIndex = 0; //if so, reset step length counter    
+        nextStep(); //and move on to the next step (as determined by sequence pattern)
+      }           
     }    
-    
-    stepLengthIndex++;    
-    
-    //determine if last beat within step
-    if(stepLengthIndex > in_length[stepindex]-1){ 
-      stepLengthIndex = 0; //if so, reset step length counter    
-      nextStep(); //and move on to the next step (as determined by sequence pattern)
-    }           
-  }    
-    
-  //step may have been freshly incremented above, set to 0 if over max
-  if(stepindex>stepMax-1){
-    stepindex = 0;
-  }  
-  //increment clock, reset when > max
-  clk++;
-  if(clk>clkMax-1){
-    clk = 0;
+      
+    //step may have been freshly incremented above, set to 0 if over max
+    if(stepindex>stepMax-1){
+      stepindex = 0;
+    }  
+    //increment clock, reset when > max
+    clk++;
+    if(clk>clkMax-1){
+      clk = 0;
+    }
+  
+  
+    //Tempo/BPM LED logic: clock pulse on quarter notes (regardless of divider setting)
+    if(clk>=0 && (clk%CLK_DIVS[QUARTER]==0)){
+        digitalWrite(clkPin,1);
+    }
+    //LED logic: turn off one tick shy of a sixteenth (should be a nice blippy blink)
+    if(clk>=0 && ((clk+1)%CLK_DIVS[SIXTEENTH]==0) ){
+      digitalWrite(clkPin,0);
+    }  
   }
-
-
-  //Tempo/BPM LED logic: clock pulse on quarter notes (regardless of divider setting)
-  if(clk>=0 && (clk%CLK_DIVS[QUARTER]==0)){
-      digitalWrite(clkPin,1);
-  }
-  //LED logic: turn off one tick shy of a sixteenth (should be a nice blippy blink)
-  if(clk>=0 && ((clk+1)%CLK_DIVS[SIXTEENTH]==0) ){
-    digitalWrite(clkPin,0);
-  }  
 }
 
 void nextStep(){
@@ -1147,18 +1183,19 @@ void nextStep(){
             nextStepIndex = stepMax-1;
         }
     }
-    if(g_seqOrderIndex == PINGPONG){ //back and forth (NEEDS WORK)
+    if(g_seqOrderIndex == PINGPONG){ //back and forth  (CHANGED, test me)
+      
       if(g_seqOrderPing){   
-        nextStepIndex = stepindex+1;
-        if(nextStepIndex > stepMax-1){
-          nextStepIndex = stepindex-1;
-          g_seqOrderPing = 0;    
+        //going forward
+        nextStepIndex = stepindex+1; //increment 
+        if(nextStepIndex == stepMax -1){ //if next step is last
+          g_seqOrderPing = 0;     //set backward for next time
         }
       }else{
-        nextStepIndex = stepindex-1;
-        if(nextStepIndex < 0)
-          nextStepIndex = stepindex+1;
-          g_seqOrderPing = 1;
+        //going backward
+        nextStepIndex = stepindex-1; //decrement
+        if(nextStepIndex == 0) //if next step is first
+          g_seqOrderPing = 1; //set forward for next time
       }
     }
 

@@ -63,9 +63,9 @@ char SEQ_ORDERS_TEXT[5][10] = {"Forward","Reverse", "Random", "Brownian", "PingP
 //can allow partial usage/testing while filling in 
 static const bool POT_ENABLED[4][8] = {
                                         {1,1,1,1,1,1,1,1},
-                                        {0,1,1,1,1,1,1,1},
                                         {1,1,1,1,1,1,1,1},
-                                        {1,0,0,0,1,0,1,0}
+                                        {1,1,1,1,1,1,1,1},
+                                        {1,1,1,1,1,1,1,1}
                                         };
 
 static const int DEFAULT_OCTAVE = 0;
