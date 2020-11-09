@@ -152,14 +152,18 @@ void pollAllSteps(int n){
 
   //check to see if info menu is selected and if refresh time is elapsed
   if(menuIndex == MI_INFO && currentMillis-lastDisplayMillis >= n){      
-    for(int i=0;i<stepMax;i++){
-      pollStep(i);
-    }
+    pollAllSteps();
     
     updateDisplay();
     //mark the time
     lastDisplayMillis = currentMillis;
   }
+}
+
+void pollAllSteps(){
+    for(int i=0;i<stepMax;i++){
+      pollStep(i);
+    }
 }
 
 void pollStep(int s){
@@ -622,12 +626,24 @@ void displayInfo(){
     display.println("      howdy.        ");
   }
   if(g_infoModeIndex == SEQINFO){
-    display.print("  ");
+    //current position line
+    //begin by displaying sequence length
+    if(getPatternLength()%4 == 0)//highlight text if pattern length is a multiple of 4 (means pattern will gel well in 4/4)
+      display.setTextColor(BLACK,WHITE);
+          
+    if(getPatternLength() < 10)
+      display.print(" ");//pad pattern length when one digit
+    display.print(getPatternLength());
+    //return to regular color
+    display.setTextColor(WHITE,BLACK);
+    display.print("");
     for(int i=0;i<8;i++){
       displaySeqPos(i);
       display.print(" ");
     }
     display.println("");
+    
+    //step length line
     display.print("  ");    
     for(int i=0;i<8;i++){
       displaySeqInfo1(i);  
@@ -635,12 +651,15 @@ void displayInfo(){
         display.print(" ");
     }
     display.println("");
+
+    //current counter line
     display.print("  ");
     for(int i=0;i<8;i++){
       displaySeqInfo2(i);
       if(i<7)
       display.print(" ");
-    }    
+    }
+    display.println("");    
   }
   if(g_infoModeIndex == STEPVALUE){
     displayStepValue(stepindex);   
@@ -689,14 +708,24 @@ void displaySeqInfo2(int s){
   if(s == stepindex){
     display.print(stepLengthIndex+1); 
   }else{
-    display.print("-");
+    if(s == getMaxStep()+1){
+      display.print("<");
+    }else if(s > getMaxStep()){
+      display.print(" ");
+    }else{
+      display.print("-");  
+    }    
   }
 }
 void displaySeqPos(int s){
   if(s == stepindex){
     display.print("*"); 
   }else{
-    display.print(" ");
+    if(s == getMaxStep()+1){
+      display.print("<");
+    }else{
+      display.print(" ");
+    }
   }
 }
 void displayStepValue(int s){
@@ -1267,7 +1296,10 @@ void nextStep(){
 //    Serial.print(" next step:");
 //    Serial.println(nextStepIndex);
     
-    pollStep(nextStepIndex); //read next step's data from knobs
+    //read next step's data from knobs
+    //pollStep(nextStepIndex); 
+    //testing overhead of always polling (better for display purposes, possibly performance penalty)
+    pollAllSteps(); 
     
     //test to see if next step's velocity < 0 (flag for stop seq);
     if((stepindex < stepMax-1) && (in_velocity[nextStepIndex] < 0)){
@@ -1275,4 +1307,24 @@ void nextStep(){
         pollStep(0); 
     }    
     stepindex = nextStepIndex;    
+}
+
+int getPatternLength(){
+  //totals up contents of length array, minding
+  int t = 0;
+  
+  for(int i=0;i<=getMaxStep();i++){
+    if(i<stepMax)  
+      t += in_length[i];
+  }
+  return t;  
+}
+
+int getMaxStep(){
+  //scans velocities array, returns the max length of pattern as defined by a velocity knob at 0
+  for(int i=1;i<stepMax;i++){
+    if(in_velocity[i] < 0)
+      return i-1;      
+  }
+  return stepMax;
 }
