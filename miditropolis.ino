@@ -182,7 +182,8 @@ void pollStep(int s){
   
   //perform logic based on position divisions
   int note_octave = map(noteVal,0,1023,-1,2);
-  int note_val =  map(noteVal,0,1023,0,3*g_scale_max)%g_scale_max;
+  int note_val =  map(noteVal,0,1023,0,3*(g_scale_max+1))%(g_scale_max+1);
+  
   int dur_mode =  map(durationVal,0,1023,0,4); //split into 2 quarters + half : HOLD, ONCE, REPEAT*2 
   if(dur_mode >= 2) 
      dur_mode = 2; //Q3 and Q4 = REPEAT = 2;  
@@ -730,12 +731,12 @@ void displayStepValue(int s){
   display.print(in_note[s][1]);
   display.print(" ");
 
-  int note = g_key+ (in_note[s][0]*12) + g_scale[in_note[s][1]-1][0];
+  int note = g_key+ (in_note[s][0]*12) + g_scale[in_note[s][1]][0];
 
   display.print(getNoteLetter(note));    
   display.print(getNoteOctave(note)); 
   display.print(" ");
-  display.println(FORM_NAMES[g_scale[in_note[s][1]-1][1]]);
+  display.println(FORM_NAMES[g_scale[in_note[s][1]][1]]);
 }
 
 void displayDebug(){  
@@ -863,7 +864,7 @@ char* getSubMenuText(){
 
 void arbitraryDebug(){
   //this is called from the main loop, and should contain whatever arbitrary code is needed to figure out if there's something wrong
-
+  //currently spits out a serial output test of the knob value range for notes/chords
   int note_octave;
   int note_val;
   int prev_val;
@@ -1044,7 +1045,7 @@ void loop(){
       pollAllSteps(1000);
       
       //TODO  REMOVE/COMMENT ME WHEN DONE DEBUGGING
-      arbitraryDebug();
+      //arbitraryDebug();
       
       
       if(prevToggleVal == true){
