@@ -282,7 +282,7 @@ void pollEncoder(){
     encoderVal = digitalRead(rotaryEncoderPin[0]);
     if(encoderVal != encoderPrevVal){
       changeTime = millis();
-      if(changeTime - lastChangeTime > 75){ //if last change was less than X ms ago, ignore it... (debouncing)  
+      if(changeTime - lastChangeTime > 150){ //if last change was less than X ms ago, ignore it... (debouncing)  
 
         bool increment = (encoderVal != digitalRead(rotaryEncoderPin[1]));
                        
@@ -835,14 +835,6 @@ void infoRefresh(int n){
   }
 }
 
-//void memoryLog(){
-//        Serial.print(millis());
-//        Serial.print(" ");
-//        Serial.print(menuIndex);
-//        Serial.print(" ");
-//        Serial.println(freeMemory());
-//}
-
 char* getSubMenuText(){
   switch(menuIndex){
       case MI_SCALE: 
@@ -868,6 +860,43 @@ char* getSubMenuText(){
        break;
     }
 }
+
+void arbitraryDebug(){
+  //this is called from the main loop, and should contain whatever arbitrary code is needed to figure out if there's something wrong
+
+  int note_octave;
+  int note_val;
+  int prev_val;
+
+  Serial.print("BEGIN FOR ");
+  Serial.print(SCALE_TEXT[g_scaleIndex]);
+  Serial.print("  max positions: ");
+  Serial.println(g_scale_max);
+  
+  for(int i=0;i<1023;i++){
+    note_octave = map(i,0,1023,-1,2);
+    note_val =  map(i,0,1023,0,3*(g_scale_max+1))%(g_scale_max+1);
+
+    int note = g_key+ (note_octave*12) + g_scale[note_val][0];
+
+    if(prev_val != note_val){      
+      Serial.print(i);
+      Serial.print(" ");
+      Serial.print(note_octave);
+      Serial.print(" ");
+      Serial.print(note_val);
+      Serial.print(" == ");
+      Serial.print(getNoteLetter(note));    
+      Serial.print(getNoteOctave(note));
+      Serial.print(" ");
+      Serial.println(FORM_NAMES[g_scale[note_val][1]]);
+    }
+    prev_val = note_val;
+  }
+  Serial.println("-----------DONE----------");
+}
+
+
 /////////////////////////END DISPLAY & SERIAL FUNCTIONS //////////////////////////////////////////////////////////////////////////////
 
 
@@ -985,7 +1014,6 @@ void setup(){
 
 void loop(){
   // the main running loop,  should put as few things here as possible to reduce latency  
-
   //test for menu knob changes
   pollEncoder();
 
@@ -1014,6 +1042,10 @@ void loop(){
       //toggle switch is off... do anything while idle?
       //maybe repoll steps?
       pollAllSteps(1000);
+      
+      //TODO  REMOVE/COMMENT ME WHEN DONE DEBUGGING
+      arbitraryDebug();
+      
       
       if(prevToggleVal == true){
         Serial.println("Toggled off");
