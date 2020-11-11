@@ -1,4 +1,4 @@
-/************************file:///C:/Users/jfran/Documents/Arduino/MIDIBOX/constants.h***************************************************************************************************************************
+/***************************************************************************************************************************************************
  * MIDIBOX
  * An Arduino-driven midi sequencer, 
  * inspired by the Intellijel Metropolis Eurorack Module, and transitively, ryk's Roland 185 sequencer
@@ -80,10 +80,10 @@ int menuIndex = MI_INFO;
 bool subMenuSelected = false;
 int g_scaleIndex = MAJ_DIA;
 int g_clockDivIndex = EIGHTH;
-int g_playModeIndex = CHORD;
 int g_clockSrcIndex = CS_EXT;
 int g_bpm = 120; //bpm value for internal clock 
-int g_arpTypeIndex = 0; //unimplemented right now...
+int g_playModeIndex = CHORD;
+int g_arpTypeIndex = 0; //index for which style of arpeggiation to use (when selected as playmode)
 int g_infoModeIndex = SEQINFO;
 int g_seqOrderIndex = FORWARD;
 int g_seqOrderPing = 1; //when seqorder is set to ping-pong, this will keep track of whether we're pinging or ponging
@@ -950,6 +950,8 @@ void chordOn(int key, int chord[12], int velocity){
     if(chord[0]>=0)
       MIDI.sendNoteOn(key+chord[0],velocity,1);
   }
+
+  //Serial.println("");
 }
 
 void chordOff(int key, int chord[12]){
@@ -967,20 +969,82 @@ void chordOff(int key, int chord[12]){
   Serial.println("");
 }
 
+
+
+
 void stepOn(int root, int scale[12][2], int octaveOffset, int scaleIndex, int velocity){
   if(!noteOn){
-    chordOn(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
-              chordFromForm(scale[scaleIndex-1][1]),
-              velocity);
+    
+    if(g_playModeIndex == ARP){
+      int key = root+ (octaveOffset*12) + scale[scaleIndex-1][0];
+      int * chord = chordFromForm(scale[scaleIndex-1][1]);
+      
+      int arpNote = getArpNote(chord);
+      MIDI.sendNoteOn(key+arpNote, velocity,1);
+    }else{
+        chordOn(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
+            chordFromForm(scale[scaleIndex-1][1]),
+            velocity);
+    }
+              
     noteOn = true;
   }
 }
 
 void stepOff(int root, int scale[12][2], int octaveOffset, int scaleIndex){
-  
-    chordOff(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
+
+    if(g_playModeIndex == ARP){
+      int key = root+ (octaveOffset*12) + scale[scaleIndex-1][0];
+      int * chord = chordFromForm(scale[scaleIndex-1][1]);
+      
+      int arpNote = getArpNote(chord);
+      MIDI.sendNoteOn(key+arpNote, 0,1);
+    }else{
+        chordOff(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
               chordFromForm(scale[scaleIndex-1][1]));
+    }
+
     noteOn = false;
+}
+
+int getArpNote(int chord[12]){
+
+  //determine chord size -- will form the basis for modulo operations, bounds for randoms
+  int chordSize = 0;
+  for (int i=11; i>-1; i--){
+    //decrement from last position, mark first instance of -1 (no note)
+    if(chord[i]<0){      
+      chordSize = i;
+    }
+  }
+  
+  
+  if(g_arpTypeIndex == UP){
+     //arpeggio should increment every note & repeat after reaching end
+     //pretty simple should be step % chordsize
+     return stepLengthIndex%chordSize;
+  }
+  if(g_arpTypeIndex == DOWN){
+    //arpeggio should start at top and decrement, repeating after reaching end    
+    //also pretty simple, i think   chordsize - (stepcount%chordsize) ??
+    return chordSize-(stepLengthIndex%chordSize);
+  }
+  if(g_arpTypeIndex == UPDOWN){
+   //arpeggio shoud start at bottom, work its way up, then back down after reaching top, repeating once hitting bottom   
+  
+    //not implemented yet   
+  }
+  if(g_arpTypeIndex == ODDEVEN){
+
+    //not implemented yet
+  }
+  if(g_arpTypeIndex == RANDO){
+
+    //not implemented yet
+  }
+
+  //fall through -- in case something hasn't been implemented yet
+  return 0;
 }
 
 void panic(){
