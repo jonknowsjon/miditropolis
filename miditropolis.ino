@@ -932,13 +932,13 @@ void arbitraryDebug(){
 void chordOn(int key, int chord[12], int velocity, int playMode){
 
   if(playMode == CHORD){
-    Serial.print("playing notes: ");
+//    Serial.print("playing notes: ");
     for (int i=0; i<12; i++){
       if(chord[i]<0)
         break;
       MIDI.sendNoteOn(key+chord[i], velocity, 1);
-      Serial.print(key+chord[i]);
-      Serial.print(" ");
+//      Serial.print(key+chord[i]);
+//      Serial.print(" ");
     }
   }
   if(playMode == SINGLE){
@@ -946,7 +946,7 @@ void chordOn(int key, int chord[12], int velocity, int playMode){
       MIDI.sendNoteOn(key+chord[0],velocity,1);
   }
 
-  Serial.println("");
+//  Serial.println("");
 }
 
 void chordOff(int key, int chord[12], int playMode){
@@ -968,47 +968,48 @@ void chordOff(int key, int chord[12], int playMode){
 
 void stepOn(int root, int scale[12][2], int octaveOffset, int scaleIndex, int velocity){
   if(!noteOn){
-        
+//       Serial.print("r:");
+//        Serial.print(root);
+//         Serial.print("\tsi:");
+//         Serial.print(scaleIndex);
+//         Serial.print("\too:");
+//         Serial.print(octaveOffset);
+//         Serial.print("\tscale:");
+//         Serial.println( scale[scaleIndex][0]);
+   
       
        
     if(g_playModeIndex == ARP){
-      //TODO -- determine if in sustain mode
-      if(true){
-        int key = root+ (octaveOffset*12) + scale[scaleIndex-1][0];
-        int * chord = chordFromForm(scale[scaleIndex-1][1]);
+      //determine if in sustain mode
+      if(in_duration[stepindex][0]!=HOLD){
+        int key = root+ (octaveOffset*12) + scale[scaleIndex][0];
+        int * chord = chordFromForm(scale[scaleIndex][1]);
       
         int arpNote = getArpNote(chord);
 
-        Serial.print("r:");
-        Serial.print(root);
-        Serial.print("\tk:");
-         Serial.print(key);
-         Serial.print("\tsi:");
-         Serial.print(scaleIndex);
-         Serial.print("\too:");
-         Serial.print(octaveOffset);
-         Serial.print("\tscale:");
-         Serial.print( scale[scaleIndex-1][0]);
-
-        
-        Serial.print("\tArpnote:");
-        Serial.print(arpNote);
-        Serial.print("\t");
-        Serial.println(key+chord[arpNote]);
+//
+//        Serial.print("\tk:");
+//         Serial.print(key);
+//
+//        
+//        Serial.print("\tArpnote:");
+//        Serial.print(arpNote);
+//        Serial.print("\t");
+//        Serial.println(key+chord[arpNote]);
 
         
         MIDI.sendNoteOn(key+chord[arpNote], velocity,1);
       }else{
         //duration is in sustain mode, play chord instead of arping
-        chordOn(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
-            chordFromForm(scale[scaleIndex-1][1]),
+        chordOn(  root+ (octaveOffset*12) + scale[scaleIndex][0], 
+            chordFromForm(scale[scaleIndex][1]),
             velocity,
             CHORD);
       }
       
     }else{
-        chordOn(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
-            chordFromForm(scale[scaleIndex-1][1]),
+        chordOn(  root+ (octaveOffset*12) + scale[scaleIndex][0], 
+            chordFromForm(scale[scaleIndex][1]),
             velocity,
             g_playModeIndex);
     }
@@ -1020,22 +1021,22 @@ void stepOn(int root, int scale[12][2], int octaveOffset, int scaleIndex, int ve
 void stepOff(int root, int scale[12][2], int octaveOffset, int scaleIndex){
 
     if(g_playModeIndex == ARP){
-      //TODO -- determine if in sustain mode
-      if(true){  
-        int key = root+ (octaveOffset*12) + scale[scaleIndex-1][0];
-        int * chord = chordFromForm(scale[scaleIndex-1][1]);
+      //determine if in sustain mode
+      if(in_duration[stepindex][0]!=HOLD){  
+        int key = root+ (octaveOffset*12) + scale[scaleIndex][0];
+        int * chord = chordFromForm(scale[scaleIndex][1]);
         
         int arpNote = getArpNote(chord);
         MIDI.sendNoteOn(key+chord[arpNote], 0,1);
       }else{
         //duration is in sustain mode, end the chord 
-        chordOff(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
-              chordFromForm(scale[scaleIndex-1][1]),
+        chordOff(  root+ (octaveOffset*12) + scale[scaleIndex][0], 
+              chordFromForm(scale[scaleIndex][1]),
               CHORD);
       }
     }else{
-        chordOff(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
-              chordFromForm(scale[scaleIndex-1][1]),
+        chordOff(  root+ (octaveOffset*12) + scale[scaleIndex][0], 
+              chordFromForm(scale[scaleIndex][1]),
               g_playModeIndex);
     }
 
