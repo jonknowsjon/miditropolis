@@ -384,6 +384,9 @@ void modifyPlayMode(bool increment){
 		if(g_playModeIndex < 0)
 			g_playModeIndex = PLAY_MODES_ITEMCOUNT-1;
 	}
+  //possibly hacky... call midi panic and end all playing notes
+  //if sequence is running, the note-end event may never be called if old notes are not in current playmode (especially poly>mono)
+  panic();
 }
 
 void modifyClockDiv(bool increment){
@@ -411,6 +414,9 @@ void modifyArpType(bool increment){
 		if(g_arpTypeIndex < 0)
 			g_arpTypeIndex = ARPTYPE_ITEMCOUNT-1;
 	}
+  //possibly hacky... call midi panic and end all playing notes
+  //if sequence is running, the note-end event may never be called if old note is not in new pattern
+  panic();
 }
 
 void modifyClockSource(bool increment){
@@ -501,6 +507,9 @@ void modifyKey(bool increment){
       if(g_key > noteMin)
         g_key--;
     }
+    //possibly hacky... call midi panic and end all playing notes
+    //if sequence is running, the note-end event may never be called if old note is not in new key
+    panic();
 }
 
 void setGlobalScale(int newscale[12][2]){
@@ -1318,8 +1327,8 @@ void handleClock(void){
     }
   
     
-    if(g_staccato > 0){
-      //for when staccato is being used
+    if(g_staccato > 0 && in_duration[stepindex][0]!=HOLD ){
+      //for when staccato is being used (except when duration is set to hold)
       //determine staccato interval (distance between current clock and next clock division)
       int staccInterval = g_staccato+1;
       if(staccInterval >= clkDivider){
