@@ -15,22 +15,17 @@
  * PolyMode - Currently Poly is Chord Triad only, different intervals,  thirds, fifths, etc?
  * Settable MIDI channels (listen, output)
  * Harmony Midi - for intervals/triads, output on different midi channels for poly using multi instruments?
- * Seq Length Aids - skip marker?  sum of lengths (aids in getting good loops)
  * 
  * Needs Testing:
  * 
  * 
  * Bugs:
  * Staccato overrides sustained note mode
- * Clock toggle on crams notes together?   (Flushing MIDI.read() seems to have helped)
  * Cycling through menu messes up notes
  * 
  * *************************************************************************************************************************************************
  */
 
-
-//#include <MemoryFree.h>
-//#include <pgmStrToRAM.h>
 #include "splash.h"
 #include <MIDI.h>
 #include <SPI.h>
@@ -934,9 +929,9 @@ void arbitraryDebug(){
  *                         BEGIN MIDI SIGNALING CODE
  ************************************************************************************************************************************/
 
-void chordOn(int key, int chord[12], int velocity){
-  //TODO arpeggiation probably requires total reworking!
-  if(g_playModeIndex == CHORD){
+void chordOn(int key, int chord[12], int velocity, int playMode){
+
+  if(playMode == CHORD){
     //Serial.print("playing notes: ");
     for (int i=0; i<12; i++){
       if(chord[i]<0)
@@ -946,7 +941,7 @@ void chordOn(int key, int chord[12], int velocity){
       //Serial.print(" ");
     }
   }
-  if(g_playModeIndex == SINGLE){
+  if(playMode == SINGLE){
     if(chord[0]>=0)
       MIDI.sendNoteOn(key+chord[0],velocity,1);
   }
@@ -954,15 +949,15 @@ void chordOn(int key, int chord[12], int velocity){
   //Serial.println("");
 }
 
-void chordOff(int key, int chord[12]){
-  if(g_playModeIndex == CHORD){
+void chordOff(int key, int chord[12], int playMode){
+  if(playMode == CHORD){
     for (int i=11; i>-1; i--){  //experimenting with decrementing -- last note turned off is doing so at a delay, happens both incrementing and decrementing...
       if(chord[i]>=0){
         MIDI.sendNoteOff(key+chord[i], 0, 1);                                       
       }
     }
   }
-  if(g_playModeIndex == SINGLE){
+  if(playMode == SINGLE){
     if(chord[0]>=0)
       MIDI.sendNoteOff(key+chord[0],0,1);
   }
@@ -976,15 +971,30 @@ void stepOn(int root, int scale[12][2], int octaveOffset, int scaleIndex, int ve
   if(!noteOn){
     
     if(g_playModeIndex == ARP){
-      int key = root+ (octaveOffset*12) + scale[scaleIndex-1][0];
-      int * chord = chordFromForm(scale[scaleIndex-1][1]);
+      //TODO -- determine if in sustain mode
+      if(true){
+        int key = root+ (octaveOffset*12) + scale[scaleIndex-1][0];
+        int * chord = chordFromForm(scale[scaleIndex-1][1]);
       
-      int arpNote = getArpNote(chord);
-      MIDI.sendNoteOn(key+arpNote, velocity,1);
+        int arpNote = getArpNote(chord);
+        Serial.print("Arpnote:");
+        Serial.print(arpNote);
+        Serial.print(" ");
+        Serial.println(key+chord[arpNote]);
+        MIDI.sendNoteOn(key+chord[arpNote], velocity,1);
+      }else{
+        //duration is in sustain mode, play chord instead of arping
+        chordOn(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
+            chordFromForm(scale[scaleIndex-1][1]),
+            velocity,
+            CHORD);
+      }
+      
     }else{
         chordOn(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
             chordFromForm(scale[scaleIndex-1][1]),
-            velocity);
+            velocity,
+            g_playModeIndex);
     }
               
     noteOn = true;
@@ -994,20 +1004,32 @@ void stepOn(int root, int scale[12][2], int octaveOffset, int scaleIndex, int ve
 void stepOff(int root, int scale[12][2], int octaveOffset, int scaleIndex){
 
     if(g_playModeIndex == ARP){
-      int key = root+ (octaveOffset*12) + scale[scaleIndex-1][0];
-      int * chord = chordFromForm(scale[scaleIndex-1][1]);
-      
-      int arpNote = getArpNote(chord);
-      MIDI.sendNoteOn(key+arpNote, 0,1);
+      //TODO -- determine if in sustain mode
+      if(true){  
+        int key = root+ (octaveOffset*12) + scale[scaleIndex-1][0];
+        int * chord = chordFromForm(scale[scaleIndex-1][1]);
+        
+        int arpNote = getArpNote(chord);
+        MIDI.sendNoteOn(key+chord[arpNote], 0,1);
+      }else{
+        //duration is in sustain mode, end the chord 
+        chordOff(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
+              chordFromForm(scale[scaleIndex-1][1]),
+              CHORD);
+      }
     }else{
         chordOff(  root+ (octaveOffset*12) + scale[scaleIndex-1][0], 
-              chordFromForm(scale[scaleIndex-1][1]));
+              chordFromForm(scale[scaleIndex-1][1]),
+              g_playModeIndex);
     }
 
     noteOn = false;
 }
 
 int getArpNote(int chord[12]){
+
+  static int prevSLI = -1;
+  static int randNote = 0;
 
   //determine chord size -- will form the basis for modulo operations, bounds for randoms
   int chordSize = 0;
@@ -1017,7 +1039,6 @@ int getArpNote(int chord[12]){
       chordSize = i;
     }
   }
-  
   
   if(g_arpTypeIndex == UP){
      //arpeggio should increment every note & repeat after reaching end
@@ -1030,19 +1051,63 @@ int getArpNote(int chord[12]){
     return chordSize-(stepLengthIndex%chordSize);
   }
   if(g_arpTypeIndex == UPDOWN){
-   //arpeggio shoud start at bottom, work its way up, then back down after reaching top, repeating once hitting bottom   
-  
-    //not implemented yet   
+   //arpeggio shoud start at bottom, work its way up, then back down after reaching top, repeating once hitting bottom     
+    if(stepLengthIndex > 0){
+        //determine if going up or down (first half, or second half of sequence)
+        if(stepLengthIndex%(chordSize*2)<chordSize)
+            return stepLengthIndex%chordSize;
+        else
+            return (chordSize)-(stepLengthIndex%chordSize);
+    }
+    return 0;   
   }
-  if(g_arpTypeIndex == ODDEVEN){
+  if(g_arpTypeIndex == UPDOWN){
+    //arpeggio should be like updown, but in reverse    
+    if(stepLengthIndex%(chordSize*2)>=chordSize)
+        return stepLengthIndex%chordSize;
+    else
+        return (chordSize)-(stepLengthIndex%chordSize);  
+  }
+  if(g_arpTypeIndex == STAIR){
+    //a stairstepping arpeggio
+    //inputs should be  0 1 2 3 4 5 6
+    //pattern should be 0 2 1 3 5 4 6
+    //so essentially alternating 0 +1 -1
+    int s = stepLengthIndex%chordSize;
+    int trip = s%3;
 
-    //not implemented yet
+    switch(trip){
+        case 0:
+            return s;
+            break;
+        case 1:
+            return s+1;
+            break;
+        case 2:
+            return s-1;
+            break;
+    }
+
   }
   if(g_arpTypeIndex == RANDO){
+    //play random notes within the chord
 
-    //not implemented yet
+    //since this function is expected to be called both for the noteOn and noteOff, we'll need to persist which random note was assigned.
+    //determine if this is the first call of this index
+    if(prevSLI != stepLengthIndex){      
+      //this is the first call, save it
+      prevSLI = stepLengthIndex;
+      
+      //generate, save, and return a random note
+      randNote = random(chordSize-1);
+      return randNote;
+    }else{
+      //this is the second call, return persisted note;
+      return randNote;
+    }   
   }
-
+  
+  Serial.println("FELL THROUGH?");
   //fall through -- in case something hasn't been implemented yet
   return 0;
 }
