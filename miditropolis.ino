@@ -1187,6 +1187,7 @@ void setup(){
   MIDI.setHandleStart(handleStart);
   MIDI.setHandleStop(handleStop);
   MIDI.setHandleClock(handleClock);
+  MIDI.turnThruOff(); // Disable passthrough -- when enabled, causes a feedback loop in FL Studio
  
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
